@@ -255,6 +255,49 @@ func (e *ConfiguredExtensions) BeforeProviderRequest(ctx context.Context, req *p
 	return nil
 }
 
+// AfterProviderResponse lets subscribed extensions observe or reject provider responses.
+func (e *ConfiguredExtensions) AfterProviderResponse(ctx context.Context, req provider.Request, events []provider.Event) error {
+	if e == nil {
+		return nil
+	}
+	hookEvents, err := providerHookEvents(events)
+	if err != nil {
+		return err
+	}
+	for _, proc := range e.procs {
+		if !proc.HookSubscribed("provider_response") {
+			continue
+		}
+		id := fmt.Sprintf("provider-response-%d", atomic.AddUint64(&e.nextHookID, 1))
+		res, err := proc.CallHook(ctx, extproto.HookCall{ID: id, Hook: "provider_response", Request: req, Events: hookEvents})
+		if err != nil {
+			return withExtensionLogPath(err, proc.LogPath())
+		}
+		if res.Error != "" {
+			return withExtensionLogPath(fmt.Errorf("%s", res.Error), proc.LogPath())
+		}
+		if res.Deny {
+			return withExtensionLogPath(fmt.Errorf("provider response denied by extension"), proc.LogPath())
+		}
+	}
+	return nil
+}
+
+func providerHookEvents(events []provider.Event) ([]extproto.ProviderEvent, error) {
+	out := make([]extproto.ProviderEvent, 0, len(events))
+	for _, ev := range events {
+		if ev == nil {
+			continue
+		}
+		data, err := json.Marshal(ev)
+		if err != nil {
+			return nil, err
+		}
+		out = append(out, extproto.ProviderEvent{Type: ev.ProviderEventType(), Data: data})
+	}
+	return out, nil
+}
+
 // StartConfiguredExtensionSet starts configured extension subprocesses.
 func StartConfiguredExtensionSet(ctx context.Context, cfg config.Config) (*ConfiguredExtensions, error) {
 	if len(cfg.Extensions) == 0 {

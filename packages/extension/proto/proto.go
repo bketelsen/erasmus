@@ -47,6 +47,12 @@ type Event struct {
 	Data  json.RawMessage `json:"data,omitempty"`
 }
 
+// ProviderEvent carries a normalized provider stream event in hook payloads.
+type ProviderEvent struct {
+	Type string          `json:"type"`
+	Data json.RawMessage `json:"data,omitempty"`
+}
+
 // SubscribeHooks requests runtime hook calls from the host.
 type SubscribeHooks struct {
 	Hooks []string `json:"hooks,omitempty"`
@@ -57,6 +63,7 @@ type HookCall struct {
 	ID      string           `json:"id"`
 	Hook    string           `json:"hook"`
 	Request provider.Request `json:"request,omitempty"`
+	Events  []ProviderEvent  `json:"events,omitempty"`
 }
 
 // HookResult returns a runtime hook decision to the host.

@@ -73,14 +73,23 @@ func RunConfigured(ctx context.Context, opts RunOptions, cfg config.Config, stor
 		return err
 	}
 	if extensions != nil {
-		previous := resolved.Harness.Hooks.BeforeProviderRequest
+		previousRequest := resolved.Harness.Hooks.BeforeProviderRequest
 		resolved.Harness.Hooks.BeforeProviderRequest = func(ctx context.Context, req *provider.Request) error {
-			if previous != nil {
-				if err := previous(ctx, req); err != nil {
+			if previousRequest != nil {
+				if err := previousRequest(ctx, req); err != nil {
 					return err
 				}
 			}
 			return extensions.BeforeProviderRequest(ctx, req)
+		}
+		previousResponse := resolved.Harness.Hooks.AfterProviderResponse
+		resolved.Harness.Hooks.AfterProviderResponse = func(ctx context.Context, response harness.ProviderResponseContext) error {
+			if previousResponse != nil {
+				if err := previousResponse(ctx, response); err != nil {
+					return err
+				}
+			}
+			return extensions.AfterProviderResponse(ctx, response.Request, response.Events)
 		}
 	}
 	h, err := harness.New(ctx, resolved.Harness)

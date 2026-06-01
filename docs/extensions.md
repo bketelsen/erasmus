@@ -13,7 +13,7 @@ Every stdout line from an extension must be one JSON frame:
 {"type":"register_tool","data":{"name":"echo","description":"Echo text"}}
 {"type":"register_command","data":{"name":"hello","description":"Print a greeting"}}
 {"type":"subscribe","data":{"events":["settled","save_point"]}}
-{"type":"subscribe_hooks","data":{"hooks":["provider_request"]}}
+{"type":"subscribe_hooks","data":{"hooks":["provider_request","provider_response"]}}
 ```
 
 The host calls tools and commands by writing frames to the extension stdin:
@@ -40,7 +40,7 @@ Tool result `content` uses Erasmus canonical message content. Text parts are enc
 
 `subscribe` lets an extension request runtime events by event type. Use `"*"` to request every forwarded event. Event delivery is best-effort and currently one-way; extensions should not block host progress waiting for event acknowledgement.
 
-`subscribe_hooks` lets an extension request blocking runtime hook calls. The supported hook is currently `provider_request`, which runs before the provider stream begins. A hook result can deny the operation with `{"deny":true,"error":"..."}` or replace the provider request by returning a `request` object. Hook calls are blocking, so handlers should return quickly.
+`subscribe_hooks` lets an extension request blocking runtime hook calls. Supported hooks are `provider_request`, which runs before the provider stream begins, and `provider_response`, which runs after the provider stream completes. A hook result can deny the operation with `{"deny":true,"error":"..."}`. `provider_request` can also replace the provider request by returning a `request` object. Hook calls are blocking, so handlers should return quickly.
 
 Supported host actions:
 
@@ -87,7 +87,7 @@ func main() {
 	err := sdk.Run(context.Background(), sdk.Extension{
 		Name: "go-demo",
 		Events: []string{"settled"},
-		Hooks: []string{"provider_request"},
+		Hooks: []string{"provider_request", "provider_response"},
 		OnEvent: func(ctx context.Context, ev proto.Event) ([]proto.HostAction, error) {
 			return []proto.HostAction{sdk.PrintAction("saw " + ev.Type)}, nil
 		},
@@ -151,6 +151,6 @@ Startup errors and command/tool failures include the log path when available. In
 
 ## Current Gaps
 
-The protocol currently covers startup registration, tools, commands, command host actions, runtime event subscriptions, the `provider_request` hook, diagnostics, and configured subprocess tools.
+The protocol currently covers startup registration, tools, commands, command host actions, runtime event subscriptions, provider request/response hooks, diagnostics, and configured subprocess tools.
 
-The stable protocol does not yet expose provider response hooks, context transforms, broad resource mutation requests beyond active-tool selection, panels, skills, or background lifecycle controls. Keep extensions headless and avoid depending on a specific frontend.
+The stable protocol does not yet expose context transforms, broad resource mutation requests beyond active-tool selection, panels, skills, or background lifecycle controls. Keep extensions headless and avoid depending on a specific frontend.
