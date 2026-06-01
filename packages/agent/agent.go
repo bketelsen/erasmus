@@ -229,6 +229,13 @@ func (a *Agent) SetReasoning(reasoning string) {
 	a.loopConfig.Reasoning = reasoning
 }
 
+// SetTools updates the tool registry used for subsequent runs.
+func (a *Agent) SetTools(tools tool.Registry) {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	a.state.Tools = tools
+}
+
 // Messages returns a transcript copy.
 func (a *Agent) Messages() []message.Message {
 	return a.State().Messages

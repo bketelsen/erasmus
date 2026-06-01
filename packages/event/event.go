@@ -100,9 +100,11 @@ type Usage struct {
 
 func (Usage) Type() string { return "usage" }
 
-// ResourcesUpdate reports prompt/skill resource changes.
+// ResourcesUpdate reports prompt, skill, and tool resource changes.
 type ResourcesUpdate struct {
-	Skills []skill.Skill `json:"skills,omitempty"`
+	Skills      []skill.Skill `json:"skills,omitempty"`
+	Tools       []tool.Spec   `json:"tools,omitempty"`
+	ActiveTools []string      `json:"active_tools,omitempty"`
 }
 
 func (ResourcesUpdate) Type() string { return "resources_update" }

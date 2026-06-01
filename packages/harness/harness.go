@@ -29,6 +29,7 @@ type Config struct {
 	Prompt          prompt.Builder
 	Skills          []skill.Skill
 	Tools           tool.Registry
+	ActiveTools     []string
 	LoopHooks       loop.Hooks
 	ConfirmToolCall func(context.Context, loop.ToolCallContext) (bool, error)
 	MaxSteps        int
@@ -36,6 +37,13 @@ type Config struct {
 
 // PromptOptions controls prompt submission.
 type PromptOptions struct{}
+
+// Resources groups runtime prompt resources that can be changed together.
+type Resources struct {
+	Skills      []skill.Skill
+	Tools       []tool.Tool
+	ActiveTools []string
+}
 
 // State is the harness state exposed to frontends.
 type State struct {
@@ -60,6 +68,7 @@ type Harness struct {
 	nextSub int
 	seen    int
 	skills  []skill.Skill
+	tools   tool.Registry
 }
 
 // New creates a harness from durable session context.
@@ -83,26 +92,27 @@ func New(ctx context.Context, cfg Config) (*Harness, error) {
 		reasoning = built.Reasoning
 	}
 	systemPrompt := cfg.SystemPrompt
+	activeTools := tool.Select(cfg.Tools, cfg.ActiveTools)
 	if systemPrompt == "" && cfg.Prompt != nil {
 		meta, err := cfg.Session.Metadata(ctx)
 		if err != nil {
 			return nil, err
 		}
-		var activeTools []tool.Tool
-		if cfg.Tools != nil {
-			activeTools = cfg.Tools.List()
+		var promptTools []tool.Tool
+		if activeTools != nil {
+			promptTools = activeTools.List()
 		}
-		systemPrompt, err = cfg.Prompt.Build(ctx, prompt.Input{Model: m, Reasoning: reasoning, ActiveTools: activeTools, Skills: cfg.Skills, SessionMeta: meta})
+		systemPrompt, err = cfg.Prompt.Build(ctx, prompt.Input{Model: m, Reasoning: reasoning, ActiveTools: promptTools, Skills: cfg.Skills, SessionMeta: meta})
 		if err != nil {
 			return nil, err
 		}
 	}
 	loopHooks := withToolConfirmation(cfg.LoopHooks, cfg.ConfirmToolCall)
 	a := agent.New(agent.Config{
-		InitialState: agent.State{SystemPrompt: systemPrompt, Model: m, Reasoning: reasoning, Tools: cfg.Tools, Messages: built.Messages},
+		InitialState: agent.State{SystemPrompt: systemPrompt, Model: m, Reasoning: reasoning, Tools: activeTools, Messages: built.Messages},
 		LoopConfig:   loop.Config{Model: m, Reasoning: reasoning, Stream: cfg.Stream, Hooks: loopHooks, MaxSteps: cfg.MaxSteps, SessionID: cfg.Session.ID()},
 	})
-	h := &Harness{session: cfg.Session, agent: a, stream: cfg.Stream, subs: map[int]func(event.Event){}, seen: len(built.Messages), skills: append([]skill.Skill(nil), cfg.Skills...)}
+	h := &Harness{session: cfg.Session, agent: a, stream: cfg.Stream, subs: map[int]func(event.Event){}, seen: len(built.Messages), skills: append([]skill.Skill(nil), cfg.Skills...), tools: cfg.Tools}
 	a.Subscribe(h.handleEvent)
 	return h, nil
 }
@@ -272,9 +282,55 @@ func (h *Harness) SetSkills(ctx context.Context, skills []skill.Skill) error {
 		return err
 	}
 	h.mu.Lock()
-	h.skills = append([]skill.Skill(nil), skills...)
+	h.skills = copySkills(skills)
 	h.mu.Unlock()
-	h.publish(event.ResourcesUpdate{Skills: append([]skill.Skill(nil), skills...)})
+	h.publish(event.ResourcesUpdate{Skills: copySkills(skills)})
+	return nil
+}
+
+// SetTools replaces the known tool set and selects the active tools.
+func (h *Harness) SetTools(ctx context.Context, tools []tool.Tool, active []string) error {
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	registry := tool.NewRegistry(tools...)
+	selected := tool.Select(registry, active)
+	h.mu.Lock()
+	h.tools = registry
+	h.mu.Unlock()
+	h.agent.SetTools(selected)
+	h.publish(event.ResourcesUpdate{Tools: toolSpecs(selected), ActiveTools: toolNames(selected)})
+	return nil
+}
+
+// SetActiveTools changes which known tools are exposed to subsequent runs.
+func (h *Harness) SetActiveTools(ctx context.Context, names []string) error {
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	h.mu.Lock()
+	registry := h.tools
+	h.mu.Unlock()
+	selected := tool.Select(registry, names)
+	h.agent.SetTools(selected)
+	h.publish(event.ResourcesUpdate{Tools: toolSpecs(selected), ActiveTools: toolNames(selected)})
+	return nil
+}
+
+// SetResources updates skill and tool resources together.
+func (h *Harness) SetResources(ctx context.Context, resources Resources) error {
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	registry := tool.NewRegistry(resources.Tools...)
+	selected := tool.Select(registry, resources.ActiveTools)
+	skills := copySkills(resources.Skills)
+	h.mu.Lock()
+	h.skills = skills
+	h.tools = registry
+	h.mu.Unlock()
+	h.agent.SetTools(selected)
+	h.publish(event.ResourcesUpdate{Skills: copySkills(skills), Tools: toolSpecs(selected), ActiveTools: toolNames(selected)})
 	return nil
 }
 
@@ -389,4 +445,27 @@ func (h *Harness) eventChan() (chan event.Event, func()) {
 		}
 	})
 	return ch, unsubscribe
+}
+
+func copySkills(in []skill.Skill) []skill.Skill {
+	return append([]skill.Skill(nil), in...)
+}
+
+func toolSpecs(registry tool.Registry) []tool.Spec {
+	if registry == nil {
+		return nil
+	}
+	return append([]tool.Spec(nil), registry.Specs()...)
+}
+
+func toolNames(registry tool.Registry) []string {
+	if registry == nil {
+		return nil
+	}
+	tools := registry.List()
+	names := make([]string, 0, len(tools))
+	for _, t := range tools {
+		names = append(names, t.Name())
+	}
+	return names
 }
