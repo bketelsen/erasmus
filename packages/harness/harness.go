@@ -46,6 +46,7 @@ type Hooks struct {
 	ToolResult            func(context.Context, ToolResultContext) (ToolResultPatch, error)
 	BeforeCompact         func(context.Context, BeforeCompactContext) (BeforeCompactResult, error)
 	AfterCompact          func(context.Context, AfterCompactContext) error
+	SessionTree           func(context.Context, SessionTreeContext) (SessionTreeResult, error)
 }
 
 // ToolCallContext describes a pending tool call observed by harness hooks.
@@ -88,6 +89,19 @@ type BeforeCompactResult struct {
 // AfterCompactContext describes a completed compaction result before persistence.
 type AfterCompactContext struct {
 	Result compact.Result
+}
+
+// SessionTreeContext describes a requested session tree operation.
+type SessionTreeContext struct {
+	Action  string
+	ID      session.EntryID
+	Summary *session.BranchSummary
+}
+
+// SessionTreeResult may patch session tree operation inputs.
+type SessionTreeResult struct {
+	ID      *session.EntryID
+	Summary *session.BranchSummary
 }
 
 // Resources groups runtime prompt resources that can be changed together.
@@ -484,6 +498,18 @@ func (h *Harness) MoveTo(ctx context.Context, id session.EntryID, summary *sessi
 	if !ok {
 		return fmt.Errorf("session %q does not support tree navigation", h.session.ID())
 	}
+	if h.hooks.SessionTree != nil {
+		next, err := h.hooks.SessionTree(ctx, SessionTreeContext{Action: "move_to", ID: id, Summary: summary})
+		if err != nil {
+			return err
+		}
+		if next.ID != nil {
+			id = *next.ID
+		}
+		if next.Summary != nil {
+			summary = next.Summary
+		}
+	}
 	if err := tree.MoveTo(ctx, id, summary); err != nil {
 		return err
 	}
@@ -505,6 +531,15 @@ func (h *Harness) Branch(ctx context.Context, at session.EntryID) (session.Sessi
 	tree, ok := h.session.(session.Tree)
 	if !ok {
 		return nil, fmt.Errorf("session %q does not support tree navigation", h.session.ID())
+	}
+	if h.hooks.SessionTree != nil {
+		next, err := h.hooks.SessionTree(ctx, SessionTreeContext{Action: "branch", ID: at})
+		if err != nil {
+			return nil, err
+		}
+		if next.ID != nil {
+			at = *next.ID
+		}
 	}
 	branched, err := tree.Branch(ctx, at)
 	if err != nil {
