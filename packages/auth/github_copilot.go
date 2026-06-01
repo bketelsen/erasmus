@@ -114,7 +114,12 @@ func GitHubCopilotBaseURLFromToken(token string) string {
 		if !ok || key != "proxy-ep" || value == "" {
 			continue
 		}
-		return "https://" + strings.TrimPrefix(value, "proxy.")
+		host := strings.TrimPrefix(value, "https://")
+		host = strings.TrimPrefix(host, "http://")
+		if strings.HasPrefix(host, "proxy.") {
+			host = "api." + strings.TrimPrefix(host, "proxy.")
+		}
+		return "https://" + host
 	}
 	return ""
 }

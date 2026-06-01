@@ -11,6 +11,7 @@ import (
 	"erasmus/packages/message"
 	"erasmus/packages/model"
 	"erasmus/packages/provider"
+	"erasmus/packages/tool"
 )
 
 func TestChatCompletionsStreamUsesCopilotHeaders(t *testing.T) {
@@ -210,6 +211,48 @@ func TestAnthropicMessagesStreamUsesCopilotHeaders(t *testing.T) {
 	}
 	if !started || text != "hello" || !ended || !usage {
 		t.Fatalf("started=%v text=%q ended=%v usage=%v", started, text, ended, usage)
+	}
+}
+
+func TestAnthropicMessagesToolCallIgnoresEmptyStartInput(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "text/event-stream")
+		_, _ = w.Write([]byte("data: {\"type\":\"message_start\",\"message\":{\"id\":\"msg-1\"}}\n\n"))
+		_, _ = w.Write([]byte("data: {\"type\":\"content_block_start\",\"index\":0,\"content_block\":{\"type\":\"tool_use\",\"id\":\"toolu-1\",\"name\":\"read\",\"input\":{}}}\n\n"))
+		_, _ = w.Write([]byte("data: {\"type\":\"content_block_delta\",\"index\":0,\"delta\":{\"type\":\"input_json_delta\",\"partial_json\":\"{\\\"path\\\":\\\"\"}}\n\n"))
+		_, _ = w.Write([]byte("data: {\"type\":\"content_block_delta\",\"index\":0,\"delta\":{\"type\":\"input_json_delta\",\"partial_json\":\"README.md\\\"}\"}}\n\n"))
+		_, _ = w.Write([]byte("data: {\"type\":\"content_block_stop\",\"index\":0}\n\n"))
+		_, _ = w.Write([]byte("data: {\"type\":\"message_delta\",\"delta\":{\"stop_reason\":\"tool_use\"}}\n\n"))
+		_, _ = w.Write([]byte("data: {\"type\":\"message_stop\"}\n\n"))
+	}))
+	defer server.Close()
+
+	client, err := NewAnthropicMessages(Config{AccessToken: "copilot-token", BaseURL: server.URL, HTTPClient: server.Client()})
+	if err != nil {
+		t.Fatal(err)
+	}
+	events, err := client.Stream(context.Background(), provider.Request{
+		Model:    model.Model{Provider: "github-copilot", ID: "claude-sonnet-4.5"},
+		Messages: []message.Message{{Role: message.RoleUser, Content: []message.Content{message.Text{Text: "read README"}}}},
+		Tools:    []tool.Spec{{Name: "read", Description: "Read a file", Schema: json.RawMessage(`{"type":"object"}`)}},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	var got provider.ToolCall
+	for ev := range events {
+		switch e := ev.(type) {
+		case provider.ToolCall:
+			got = e
+		case provider.Error:
+			t.Fatalf("provider error: %s", e.Err)
+		}
+	}
+	if got.ID != "toolu-1" || got.Name != "read" || string(got.Arguments) != `{"path":"README.md"}` {
+		t.Fatalf("tool call = %+v", got)
+	}
+	if _, err := got.Arguments.MarshalJSON(); err != nil {
+		t.Fatalf("invalid arguments JSON: %v", err)
 	}
 }
 

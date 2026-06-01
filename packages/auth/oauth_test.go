@@ -93,8 +93,12 @@ func TestGitHubCopilotStaticHeaders(t *testing.T) {
 
 func TestGitHubCopilotBaseURLFromToken(t *testing.T) {
 	token := "tid=1;exp=999;proxy-ep=proxy.individual.githubcopilot.com;"
-	if got := GitHubCopilotBaseURLFromToken(token); got != "https://individual.githubcopilot.com" {
+	if got := GitHubCopilotBaseURLFromToken(token); got != "https://api.individual.githubcopilot.com" {
 		t.Fatalf("base URL = %q", got)
+	}
+	enterpriseToken := "tid=1;proxy-ep=proxy.enterprise.githubcopilot.com;"
+	if got := GitHubCopilotBaseURLFromToken(enterpriseToken); got != "https://api.enterprise.githubcopilot.com" {
+		t.Fatalf("enterprise base URL = %q", got)
 	}
 	if got := GitHubCopilotBaseURLFromToken("tid=1;"); got != "" {
 		t.Fatalf("base URL for missing proxy endpoint = %q", got)

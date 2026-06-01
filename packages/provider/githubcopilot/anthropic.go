@@ -238,7 +238,7 @@ func readAnthropicStream(body io.ReadCloser, out chan<- provider.Event) {
 			out <- provider.MessageStart{MessageID: p.Message.ID}
 		case "content_block_start":
 			if p.ContentBlock.Type == "tool_use" {
-				pendingTools[p.Index] = &pendingAnthropicTool{ID: p.ContentBlock.ID, Name: p.ContentBlock.Name, Arguments: string(p.ContentBlock.Input)}
+				pendingTools[p.Index] = &pendingAnthropicTool{ID: p.ContentBlock.ID, Name: p.ContentBlock.Name, Arguments: initialAnthropicToolInput(p.ContentBlock.Input)}
 			}
 		case "content_block_delta":
 			switch p.Delta.Type {
@@ -282,6 +282,16 @@ func readAnthropicStream(body io.ReadCloser, out chan<- provider.Event) {
 	}
 	if err := scanner.Err(); err != nil {
 		out <- provider.Error{Err: err.Error()}
+	}
+}
+
+func initialAnthropicToolInput(input json.RawMessage) string {
+	trimmed := strings.TrimSpace(string(input))
+	switch trimmed {
+	case "", "null", "{}":
+		return ""
+	default:
+		return trimmed
 	}
 }
 
