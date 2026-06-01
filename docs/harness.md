@@ -85,6 +85,7 @@ These APIs are the preferred surface for UI controls, RPC methods, and extension
 Harness hooks are higher-level than `loop.Hooks` and are intended for guards, policy, telemetry, and extension integration:
 
 - `BeforeAgentStart`: inspect or patch prompt/continue requests before an agent run starts.
+- `Context`: inspect, replace, or reject provider-bound canonical messages before request construction.
 - `BeforeProviderRequest`: inspect, mutate, or reject provider requests.
 - `AfterProviderResponse`: observe completed normalized provider streams.
 - `ToolCall`: allow, deny, replace arguments, or provide a synthetic result.
@@ -94,6 +95,8 @@ Harness hooks are higher-level than `loop.Hooks` and are intended for guards, po
 - `SessionTree`: observe, patch, or reject tree navigation and branching.
 
 Existing low-level loop hooks still work and are composed before matching harness hooks.
+
+There is intentionally no provider-native payload hook in the public harness API. Provider-specific request payloads are built inside provider adapters; cross-provider policy should use canonical messages through `Context` or normalized requests through `BeforeProviderRequest`.
 
 ## Compaction And Checkpoints
 

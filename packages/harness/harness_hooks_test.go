@@ -293,6 +293,91 @@ func TestHarnessBeforeProviderRequestErrorStopsRun(t *testing.T) {
 	drain(events)
 }
 
+func TestHarnessContextHookPatchesProviderMessages(t *testing.T) {
+	ctx := context.Background()
+	seen := false
+	stream := func(ctx context.Context, req provider.Request) (<-chan provider.Event, error) {
+		seen = true
+		if len(req.Messages) != 1 {
+			t.Fatalf("messages len = %d, want 1", len(req.Messages))
+		}
+		if got := req.Messages[0].Content[0].(message.Text).Text; got != "patched by harness" {
+			t.Fatalf("message = %q, want patched by harness", got)
+		}
+		return streamEvents(provider.MessageStart{MessageID: "a1"}, provider.TextDelta{Text: "done"}, provider.MessageEnd{StopReason: "end_turn"}), nil
+	}
+	h, err := harness.New(ctx, harness.Config{
+		Session: memory.New("test"),
+		Stream:  stream,
+		Model:   model.Model{Provider: "fake", ID: "test"},
+		Hooks: harness.Hooks{
+			Context: func(ctx context.Context, hook harness.ContextHook) (harness.ContextResult, error) {
+				if got := hook.Messages[0].Content[0].(message.Text).Text; got != "original" {
+					t.Fatalf("hook message = %q, want original", got)
+				}
+				return harness.ContextResult{Messages: []message.Message{{Role: message.RoleUser, Content: []message.Content{message.Text{Text: "patched by harness"}}}}}, nil
+			},
+		},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	events, err := h.Prompt(ctx, "original", harness.PromptOptions{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := h.Wait(ctx); err != nil {
+		t.Fatal(err)
+	}
+	drain(events)
+	if !seen {
+		t.Fatal("provider stream was not called")
+	}
+}
+
+func TestHarnessContextHookRunsAfterLoopTransform(t *testing.T) {
+	ctx := context.Background()
+	order := []string{}
+	stream := func(ctx context.Context, req provider.Request) (<-chan provider.Event, error) {
+		if got := req.Messages[0].Content[0].(message.Text).Text; got != "harness context" {
+			t.Fatalf("message = %q, want harness context", got)
+		}
+		return streamEvents(provider.MessageStart{MessageID: "a1"}, provider.TextDelta{Text: "done"}, provider.MessageEnd{StopReason: "end_turn"}), nil
+	}
+	h, err := harness.New(ctx, harness.Config{
+		Session: memory.New("test"),
+		Stream:  stream,
+		Model:   model.Model{Provider: "fake", ID: "test"},
+		LoopHooks: loop.Hooks{TransformContext: func(ctx context.Context, messages []message.Message) ([]message.Message, error) {
+			order = append(order, "loop")
+			return []message.Message{{Role: message.RoleUser, Content: []message.Content{message.Text{Text: "loop context"}}}}, nil
+		}},
+		Hooks: harness.Hooks{
+			Context: func(ctx context.Context, hook harness.ContextHook) (harness.ContextResult, error) {
+				order = append(order, "harness")
+				if got := hook.Messages[0].Content[0].(message.Text).Text; got != "loop context" {
+					t.Fatalf("hook message = %q, want loop context", got)
+				}
+				return harness.ContextResult{Messages: []message.Message{{Role: message.RoleUser, Content: []message.Content{message.Text{Text: "harness context"}}}}}, nil
+			},
+		},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	events, err := h.Prompt(ctx, "original", harness.PromptOptions{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := h.Wait(ctx); err != nil {
+		t.Fatal(err)
+	}
+	drain(events)
+	if got := strings.Join(order, ","); got != "loop,harness" {
+		t.Fatalf("hook order = %s, want loop,harness", got)
+	}
+}
+
 func TestHarnessAfterProviderResponseObservesEvents(t *testing.T) {
 	ctx := context.Background()
 	var observed harness.ProviderResponseContext

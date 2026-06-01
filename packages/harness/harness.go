@@ -42,6 +42,7 @@ type PromptOptions struct{}
 // Hooks customizes harness-level runtime behavior.
 type Hooks struct {
 	BeforeAgentStart      func(context.Context, BeforeAgentStartContext) (BeforeAgentStartResult, error)
+	Context               func(context.Context, ContextHook) (ContextResult, error)
 	BeforeProviderRequest func(context.Context, *provider.Request) error
 	AfterProviderResponse func(context.Context, ProviderResponseContext) error
 	ToolCall              func(context.Context, ToolCallContext) (ToolCallDecision, error)
@@ -61,6 +62,16 @@ type BeforeAgentStartContext struct {
 // BeforeAgentStartResult may patch agent run inputs.
 type BeforeAgentStartResult struct {
 	Prompt *string
+}
+
+// ContextHook describes provider-bound messages before request construction.
+type ContextHook struct {
+	Messages []message.Message
+}
+
+// ContextResult may replace provider-bound messages.
+type ContextResult struct {
+	Messages []message.Message
 }
 
 // ProviderResponseContext describes a completed normalized provider stream.
@@ -248,8 +259,30 @@ func wrapProviderStream(stream provider.StreamFunc, hooks Hooks) provider.Stream
 }
 
 func composeLoopHooks(hooks loop.Hooks, harnessHooks Hooks, confirm func(context.Context, loop.ToolCallContext) (bool, error)) loop.Hooks {
-	if harnessHooks.BeforeProviderRequest == nil && harnessHooks.ToolCall == nil && harnessHooks.ToolResult == nil && harnessHooks.BeforeAssistantCommit == nil && confirm == nil {
+	if harnessHooks.Context == nil && harnessHooks.BeforeProviderRequest == nil && harnessHooks.ToolCall == nil && harnessHooks.ToolResult == nil && harnessHooks.BeforeAssistantCommit == nil && confirm == nil {
 		return hooks
+	}
+	previousContext := hooks.TransformContext
+	if harnessHooks.Context != nil {
+		hooks.TransformContext = func(ctx context.Context, messages []message.Message) ([]message.Message, error) {
+			if previousContext != nil {
+				next, err := previousContext(ctx, messages)
+				if err != nil {
+					return nil, err
+				}
+				if next != nil {
+					messages = next
+				}
+			}
+			next, err := harnessHooks.Context(ctx, ContextHook{Messages: append([]message.Message(nil), messages...)})
+			if err != nil {
+				return nil, err
+			}
+			if next.Messages != nil {
+				return next.Messages, nil
+			}
+			return messages, nil
+		}
 	}
 	previousProviderRequest := hooks.BeforeProviderRequest
 	if harnessHooks.BeforeProviderRequest != nil {
