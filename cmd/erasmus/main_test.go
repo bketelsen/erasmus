@@ -180,6 +180,37 @@ func TestModelsCommandIncludesCachedModels(t *testing.T) {
 	}
 }
 
+func TestModelsRefreshFakePopulatesDefaultCache(t *testing.T) {
+	root := t.TempDir()
+	t.Setenv("ERASMUS_CONFIG_FILE", "")
+	t.Setenv("ERASMUS_AUTH_FILE", "")
+	t.Setenv("XDG_CACHE_HOME", filepath.Join(root, "cache"))
+
+	cmd := newRootCommand()
+	var out bytes.Buffer
+	cmd.SetOut(&out)
+	cmd.SetErr(&out)
+	cmd.SetArgs([]string{"models", "refresh", "fake"})
+	if err := cmd.Execute(); err != nil {
+		t.Fatal(err)
+	}
+	if got := out.String(); !strings.Contains(got, "refreshed 1 models for fake") {
+		t.Fatalf("refresh output = %q", got)
+	}
+
+	out.Reset()
+	cmd = newRootCommand()
+	cmd.SetOut(&out)
+	cmd.SetErr(&out)
+	cmd.SetArgs([]string{"models"})
+	if err := cmd.Execute(); err != nil {
+		t.Fatal(err)
+	}
+	if got := out.String(); !strings.Contains(got, "fake/echo\tFake Echo") {
+		t.Fatalf("models output = %q", got)
+	}
+}
+
 func TestDefaultStorageUsesXDGDirectories(t *testing.T) {
 	root := t.TempDir()
 	t.Setenv("ERASMUS_CONFIG_FILE", "")

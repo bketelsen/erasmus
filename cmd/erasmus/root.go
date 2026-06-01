@@ -135,7 +135,7 @@ func newSkillsCommand() *cobra.Command {
 }
 
 func newModelsCommand() *cobra.Command {
-	return &cobra.Command{
+	cmd := &cobra.Command{
 		Use:   "models",
 		Short: "List models",
 		Args:  cobra.NoArgs,
@@ -152,6 +152,28 @@ func newModelsCommand() *cobra.Command {
 			for _, m := range app.Models(catalog) {
 				fmt.Fprintf(cmd.OutOrStdout(), "%s/%s\t%s\n", m.Provider, m.ID, m.DisplayName)
 			}
+			return nil
+		},
+	}
+	cmd.AddCommand(newModelsRefreshCommand())
+	return cmd
+}
+
+func newModelsRefreshCommand() *cobra.Command {
+	return &cobra.Command{
+		Use:   "refresh [provider]",
+		Short: "Refresh cached provider models",
+		Args:  cobra.MaximumNArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			provider := "fake"
+			if len(args) > 0 {
+				provider = args[0]
+			}
+			models, err := app.RefreshModelCache(context.Background(), provider, model.NewFileCache(app.DefaultModelCachePath()))
+			if err != nil {
+				return err
+			}
+			fmt.Fprintf(cmd.OutOrStdout(), "refreshed %d models for %s\n", len(models), provider)
 			return nil
 		},
 	}

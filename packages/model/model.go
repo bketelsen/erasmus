@@ -2,6 +2,7 @@
 package model
 
 import (
+	"context"
 	"fmt"
 	"time"
 )
@@ -40,6 +41,11 @@ type Catalog interface {
 	List() []Model
 	ListProvider(provider string) []Model
 	Default(provider string) (Model, error)
+}
+
+// Discoverer discovers currently available models for a provider.
+type Discoverer interface {
+	DiscoverModels(ctx context.Context, provider string) ([]Model, error)
 }
 
 // StaticCatalog is an in-memory catalog useful for tests and early CLI wiring.

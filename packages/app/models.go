@@ -2,7 +2,9 @@ package app
 
 import (
 	"context"
+	"fmt"
 	"path/filepath"
+	"time"
 
 	"erasmus/packages/config"
 	"erasmus/packages/model"
@@ -69,6 +71,40 @@ func CatalogFromCache(ctx context.Context, cfg config.Config, cache model.Cache,
 // DefaultModelCachePath returns the default user-level model cache path.
 func DefaultModelCachePath() string {
 	return filepath.Join(xdgCacheHome(), "erasmus", "models.json")
+}
+
+// RefreshModelCache discovers models for a provider and writes them to the cache.
+func RefreshModelCache(ctx context.Context, provider string, cache model.Cache) ([]model.Model, error) {
+	if provider == "" {
+		provider = "fake"
+	}
+	if cache == nil {
+		return nil, fmt.Errorf("model cache is required")
+	}
+	models, err := discoverProviderModels(ctx, provider)
+	if err != nil {
+		return nil, err
+	}
+	if err := cache.PutProvider(ctx, provider, models, time.Now()); err != nil {
+		return nil, err
+	}
+	return models, nil
+}
+
+func discoverProviderModels(ctx context.Context, provider string) ([]model.Model, error) {
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
+	switch provider {
+	case "fake":
+		models := model.DefaultCatalog().ListProvider("fake")
+		for i := range models {
+			models[i].Source = "live"
+		}
+		return models, nil
+	default:
+		return nil, fmt.Errorf("model discovery for provider %q is not implemented", provider)
+	}
 }
 
 func mergeModels(models []model.Model, index map[string]int, incoming []model.Model) []model.Model {

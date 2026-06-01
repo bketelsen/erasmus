@@ -1,6 +1,8 @@
 package app_test
 
 import (
+	"context"
+	"path/filepath"
 	"testing"
 
 	"erasmus/packages/app"
@@ -49,5 +51,24 @@ func TestCatalogFromSourcesMergesCachedModelsBeforeUserOverrides(t *testing.T) {
 	}
 	if got.DisplayName != "User Codex" || got.Source != "user" {
 		t.Fatalf("model = %+v", got)
+	}
+}
+
+func TestRefreshModelCacheWritesFakeProviderModels(t *testing.T) {
+	ctx := context.Background()
+	cache := model.NewFileCache(filepath.Join(t.TempDir(), "models.json"))
+	models, err := app.RefreshModelCache(ctx, "fake", cache)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(models) != 1 || models[0].Provider != "fake" || models[0].ID != "echo" {
+		t.Fatalf("refreshed models = %+v", models)
+	}
+	cached, err := cache.ListProvider(ctx, "fake")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(cached) != 1 || cached[0].Provider != "fake" || cached[0].ID != "echo" || cached[0].Source != "cache" {
+		t.Fatalf("cached models = %+v", cached)
 	}
 }
