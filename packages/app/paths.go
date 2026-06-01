@@ -18,6 +18,16 @@ func xdgStateHome() string {
 	return filepath.Join(os.TempDir(), "erasmus", "state")
 }
 
+func xdgCacheHome() string {
+	if dir := os.Getenv("XDG_CACHE_HOME"); dir != "" {
+		return dir
+	}
+	if home, err := os.UserHomeDir(); err == nil && home != "" {
+		return filepath.Join(home, ".cache")
+	}
+	return filepath.Join(os.TempDir(), "erasmus", "cache")
+}
+
 func stateProjectKey(cwd string) string {
 	if cwd == "" {
 		if got, err := os.Getwd(); err == nil {

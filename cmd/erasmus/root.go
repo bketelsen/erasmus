@@ -140,11 +140,16 @@ func newModelsCommand() *cobra.Command {
 		Short: "List models",
 		Args:  cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
+			ctx := context.Background()
 			cfg, err := loadConfig(context.Background())
 			if err != nil {
 				return err
 			}
-			for _, m := range app.Models(app.CatalogFromConfig(cfg, model.DefaultCatalog())) {
+			catalog, err := app.CatalogFromCache(ctx, cfg, model.NewFileCache(app.DefaultModelCachePath()), model.DefaultCatalog())
+			if err != nil {
+				return err
+			}
+			for _, m := range app.Models(catalog) {
 				fmt.Fprintf(cmd.OutOrStdout(), "%s/%s\t%s\n", m.Provider, m.ID, m.DisplayName)
 			}
 			return nil

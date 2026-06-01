@@ -35,3 +35,19 @@ func TestCatalogFromConfigOverridesBuiltinModels(t *testing.T) {
 		t.Fatalf("model = %+v", got)
 	}
 }
+
+func TestCatalogFromSourcesMergesCachedModelsBeforeUserOverrides(t *testing.T) {
+	catalog := app.CatalogFromSources(config.Config{Models: []model.Model{
+		{Provider: "openai-codex", ID: "gpt-5.6-codex", DisplayName: "User Codex", Source: "user"},
+	}}, []model.Model{
+		{Provider: "openai-codex", ID: "gpt-5.6-codex", DisplayName: "Cached Codex", Source: "cache"},
+	}, model.DefaultCatalog())
+
+	got, err := catalog.Find("openai-codex", "gpt-5.6-codex")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.DisplayName != "User Codex" || got.Source != "user" {
+		t.Fatalf("model = %+v", got)
+	}
+}

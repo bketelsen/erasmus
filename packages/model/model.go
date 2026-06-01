@@ -1,7 +1,10 @@
 // Package model defines provider-independent model metadata and usage types.
 package model
 
-import "fmt"
+import (
+	"fmt"
+	"time"
+)
 
 // Pricing describes model cost in provider-defined currency units per million tokens.
 type Pricing struct {
@@ -11,14 +14,15 @@ type Pricing struct {
 
 // Model describes a model available through a provider.
 type Model struct {
-	ID            string  `json:"id"`
-	Provider      string  `json:"provider"`
-	DisplayName   string  `json:"display_name,omitempty"`
-	ContextWindow int     `json:"context_window,omitempty"`
-	MaxOutput     int     `json:"max_output,omitempty"`
-	Reasoning     bool    `json:"reasoning,omitempty"`
-	Source        string  `json:"source,omitempty"`
-	Pricing       Pricing `json:"pricing,omitempty"`
+	ID            string    `json:"id"`
+	Provider      string    `json:"provider"`
+	DisplayName   string    `json:"display_name,omitempty"`
+	ContextWindow int       `json:"context_window,omitempty"`
+	MaxOutput     int       `json:"max_output,omitempty"`
+	Reasoning     bool      `json:"reasoning,omitempty"`
+	Source        string    `json:"source,omitempty"`
+	Pricing       Pricing   `json:"pricing,omitempty"`
+	DiscoveredAt  time.Time `json:"discovered_at,omitempty"`
 }
 
 // Usage records token usage for one response or a cumulative session total.

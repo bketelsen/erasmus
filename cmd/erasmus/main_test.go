@@ -6,6 +6,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"erasmus/packages/config"
 	"erasmus/packages/model"
@@ -150,6 +151,31 @@ func TestModelsCommandIncludesConfiguredModelOverrides(t *testing.T) {
 		t.Fatal(err)
 	}
 	if got := out.String(); !strings.Contains(got, "openai-codex/codex-custom\tCustom Codex") {
+		t.Fatalf("models output = %q", got)
+	}
+}
+
+func TestModelsCommandIncludesCachedModels(t *testing.T) {
+	root := t.TempDir()
+	t.Setenv("ERASMUS_CONFIG_FILE", "")
+	t.Setenv("ERASMUS_AUTH_FILE", "")
+	t.Setenv("XDG_CACHE_HOME", filepath.Join(root, "cache"))
+	cache := model.NewFileCache(filepath.Join(root, "cache", "erasmus", "models.json"))
+	if err := cache.PutProvider(context.Background(), "openai-codex", []model.Model{
+		{Provider: "openai-codex", ID: "gpt-5.6-codex", DisplayName: "GPT-5.6 Codex"},
+	}, time.Now()); err != nil {
+		t.Fatal(err)
+	}
+
+	cmd := newRootCommand()
+	var out bytes.Buffer
+	cmd.SetOut(&out)
+	cmd.SetErr(&out)
+	cmd.SetArgs([]string{"models"})
+	if err := cmd.Execute(); err != nil {
+		t.Fatal(err)
+	}
+	if got := out.String(); !strings.Contains(got, "openai-codex/gpt-5.6-codex\tGPT-5.6 Codex") {
 		t.Fatalf("models output = %q", got)
 	}
 }
