@@ -100,7 +100,7 @@ Current frontends:
 - JSON-lines RPC in `packages/rpc`.
 - Background harness supervision in `packages/swarm`.
 
-See [tui.md](tui.md) for TUI behavior and troubleshooting.
+See [rpc.md](rpc.md), [swarm.md](swarm.md), and [tui.md](tui.md) for frontend behavior and troubleshooting.
 
 ## Deferrals
 
