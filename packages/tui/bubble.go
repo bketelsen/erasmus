@@ -1,0 +1,1526 @@
+package tui
+
+import (
+	"bytes"
+	"context"
+	"fmt"
+	"io"
+	"os"
+	"strings"
+	"time"
+
+	"erasmus/packages/event"
+	"erasmus/packages/harness"
+	"erasmus/packages/model"
+
+	"charm.land/bubbles/v2/textarea"
+	"charm.land/bubbles/v2/viewport"
+	tea "charm.land/bubbletea/v2"
+	"charm.land/glamour/v2"
+	"charm.land/lipgloss/v2"
+)
+
+type runtimeEventMsg struct{ event event.Event }
+type runtimeDoneMsg struct{ err error }
+type sessionsLoadedMsg struct {
+	sessions []SessionSummary
+	err      error
+}
+type sessionOpenedMsg struct {
+	path string
+	err  error
+}
+type modelAppliedMsg struct{ err error }
+type treeLoadedMsg struct {
+	tree harness.TreeState
+	err  error
+}
+type treeMovedMsg struct{ err error }
+type swarmsLoadedMsg struct {
+	servers []SwarmServerSummary
+	err     error
+}
+type swarmStatusLoadedMsg struct {
+	status SwarmStatusSummary
+	err    error
+}
+type swarmSentMsg struct {
+	status SwarmStatusSummary
+	err    error
+}
+type swarmStoppedMsg struct {
+	status SwarmStatusSummary
+	err    error
+}
+type swarmSpawnedMsg struct {
+	status SwarmStatusSummary
+	err    error
+}
+type swarmAttachTickMsg struct{ id int }
+type commandDoneMsg struct {
+	text string
+	err  error
+}
+
+type dialogMode int
+
+const (
+	dialogNone dialogMode = iota
+	dialogSessions
+	dialogModel
+	dialogTree
+	dialogSwarm
+	dialogHelp
+)
+
+type bubbleModel struct {
+	app *App
+	ctx context.Context
+
+	viewport viewport.Model
+	input    textarea.Model
+	width    int
+	height   int
+	renderer *glamour.TermRenderer
+	theme    bubbleTheme
+
+	transcript         string
+	renderedTranscript string
+	status             string
+	err                string
+	running            bool
+	follow             bool
+	assistantOpen      bool
+	messages           <-chan tea.Msg
+
+	dialog             dialogMode
+	helpReturnDialog   dialogMode
+	sessions           []SessionSummary
+	selectedSession    int
+	models             []model.Model
+	selectedModel      int
+	reasoningLevels    []string
+	selectedReasoning  int
+	tree               harness.TreeState
+	selectedTree       int
+	swarmServers       []SwarmServerSummary
+	selectedSwarm      int
+	swarmStatus        SwarmStatusSummary
+	selectedSwarmAgent int
+	swarmLog           string
+	swarmNotice        string
+	swarmPromptMode    string
+	swarmAttached      bool
+	swarmAttachTickID  int
+}
+
+type bubbleTheme struct {
+	Name        string
+	Glamour     string
+	Brand       lipgloss.Style
+	Muted       lipgloss.Style
+	Error       lipgloss.Style
+	Help        lipgloss.Style
+	ReadyPill   lipgloss.Style
+	RunningPill lipgloss.Style
+	ErrorPill   lipgloss.Style
+	Header      lipgloss.Style
+	Viewport    lipgloss.Style
+	Input       lipgloss.Style
+	Dialog      lipgloss.Style
+	Selected    lipgloss.Style
+}
+
+func darkBubbleTheme() bubbleTheme {
+	return bubbleTheme{
+		Name:        "dark",
+		Glamour:     "dark",
+		Brand:       lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("81")),
+		Muted:       lipgloss.NewStyle().Foreground(lipgloss.Color("245")),
+		Error:       lipgloss.NewStyle().Foreground(lipgloss.Color("203")),
+		Help:        lipgloss.NewStyle().Foreground(lipgloss.Color("244")),
+		ReadyPill:   lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("16")).Background(lipgloss.Color("114")).Padding(0, 1),
+		RunningPill: lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("16")).Background(lipgloss.Color("222")).Padding(0, 1),
+		ErrorPill:   lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("16")).Background(lipgloss.Color("203")).Padding(0, 1),
+		Header:      lipgloss.NewStyle().Border(lipgloss.NormalBorder(), false, false, true, false).BorderForeground(lipgloss.Color("238")).Padding(0, 1),
+		Viewport:    lipgloss.NewStyle().Border(lipgloss.RoundedBorder()).BorderForeground(lipgloss.Color("238")).Padding(0, 1),
+		Input:       lipgloss.NewStyle().Border(lipgloss.RoundedBorder()).BorderForeground(lipgloss.Color("63")).Padding(0, 1),
+		Dialog:      lipgloss.NewStyle().Border(lipgloss.DoubleBorder()).BorderForeground(lipgloss.Color("99")).Padding(0, 1),
+		Selected:    lipgloss.NewStyle().Foreground(lipgloss.Color("16")).Background(lipgloss.Color("81")).Padding(0, 1),
+	}
+}
+
+func plainBubbleTheme() bubbleTheme {
+	return bubbleTheme{
+		Name:        "plain",
+		Glamour:     "notty",
+		Brand:       lipgloss.NewStyle().Bold(true),
+		Muted:       lipgloss.NewStyle(),
+		Error:       lipgloss.NewStyle().Bold(true),
+		Help:        lipgloss.NewStyle(),
+		ReadyPill:   lipgloss.NewStyle().Bold(true).Padding(0, 1),
+		RunningPill: lipgloss.NewStyle().Bold(true).Padding(0, 1),
+		ErrorPill:   lipgloss.NewStyle().Bold(true).Padding(0, 1),
+		Header:      lipgloss.NewStyle().Border(lipgloss.NormalBorder(), false, false, true, false).Padding(0, 1),
+		Viewport:    lipgloss.NewStyle().Border(lipgloss.NormalBorder()).Padding(0, 1),
+		Input:       lipgloss.NewStyle().Border(lipgloss.NormalBorder()).Padding(0, 1),
+		Dialog:      lipgloss.NewStyle().Border(lipgloss.NormalBorder()).Padding(0, 1),
+		Selected:    lipgloss.NewStyle().Bold(true).Padding(0, 1),
+	}
+}
+
+func namedBubbleTheme(name string) bubbleTheme {
+	switch strings.ToLower(strings.TrimSpace(name)) {
+	case "plain", "mono", "monochrome":
+		return plainBubbleTheme()
+	default:
+		return darkBubbleTheme()
+	}
+}
+
+func newBubbleModel(ctx context.Context, app *App) bubbleModel {
+	vp := viewport.New()
+	ta := textarea.New()
+	ta.Placeholder = "Ask Erasmus…  ctrl+s submit · PgUp/PgDn scroll · End follow · ctrl+o sessions · ctrl+p model · ctrl+t tree · ctrl+w swarm"
+	ta.Prompt = "┃ "
+	ta.ShowLineNumbers = false
+	ta.SetHeight(4)
+	ta.SetWidth(80)
+	ta.Focus()
+	theme := namedBubbleTheme(app.Theme)
+	renderer, _ := glamour.NewTermRenderer(glamour.WithStandardStyle(theme.Glamour), glamour.WithWordWrap(100))
+	m := bubbleModel{app: app, ctx: ctx, viewport: vp, input: ta, status: "ready", follow: true, renderer: renderer, theme: theme, reasoningLevels: []string{"", "low", "medium", "high"}}
+	m.appendLine("Erasmus TUI — Bubble Tea full-screen shell")
+	m.appendLine("Type /help for commands. Submit with ctrl+s. Scroll with PgUp/PgDn or ctrl+u/ctrl+d; End resumes follow. Swarm dashboard: ctrl+w.")
+	m.syncTranscript()
+	return m
+}
+
+func (m bubbleModel) Init() tea.Cmd { return textarea.Blink }
+
+func (m bubbleModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
+	switch x := msg.(type) {
+	case tea.WindowSizeMsg:
+		m.width = x.Width
+		m.height = x.Height
+		m.resize()
+		return m, nil
+	case tea.MouseWheelMsg:
+		return m.handleMouse(x)
+	case tea.KeyPressMsg:
+		if x.String() == "?" && m.dialog != dialogHelp {
+			m.helpReturnDialog = m.dialog
+			m.dialog = dialogHelp
+			m.status = "help"
+			return m, nil
+		}
+		if m.dialog == dialogSessions {
+			return m.updateSessionsDialog(x)
+		}
+		if m.dialog == dialogModel {
+			return m.updateModelDialog(x)
+		}
+		if m.dialog == dialogTree {
+			return m.updateTreeDialog(x)
+		}
+		if m.dialog == dialogSwarm {
+			return m.updateSwarmDialog(x)
+		}
+		if m.dialog == dialogHelp {
+			return m.updateHelpDialog(x)
+		}
+		if updated, cmd, ok := m.handleViewportKey(x); ok {
+			return updated, cmd
+		}
+		switch x.String() {
+		case "ctrl+c":
+			return m, tea.Quit
+		case "ctrl+s":
+			return m.submit()
+		case "ctrl+o":
+			return m.openSessionsDialog()
+		case "ctrl+p":
+			return m.openModelDialog()
+		case "ctrl+t":
+			return m.openTreeDialog()
+		case "ctrl+w":
+			return m.openSwarmDialog()
+		}
+	case runtimeEventMsg:
+		m.applyEvent(x.event)
+		return m, m.waitRuntime()
+	case runtimeDoneMsg:
+		m.running = false
+		if x.err != nil {
+			m.err = x.err.Error()
+			m.status = "error"
+			m.appendLine("error: " + x.err.Error())
+		} else {
+			m.err = ""
+			m.status = "ready"
+		}
+		return m, nil
+	case sessionsLoadedMsg:
+		m.running = false
+		if x.err != nil {
+			m.err = x.err.Error()
+			m.status = "error"
+			return m, nil
+		}
+		m.err = ""
+		m.status = "sessions"
+		m.dialog = dialogSessions
+		m.sessions = x.sessions
+		m.selectedSession = 0
+		return m, nil
+	case sessionOpenedMsg:
+		m.running = false
+		m.dialog = dialogNone
+		if x.err != nil {
+			m.err = x.err.Error()
+			m.status = "error"
+			m.appendLine("error: " + x.err.Error())
+			m.syncTranscript()
+			return m, nil
+		}
+		m.err = ""
+		m.status = "ready"
+		m.follow = true
+		m.transcript = ""
+		m.appendLine("opened session: " + x.path)
+		m.renderSessionTranscript()
+		m.syncTranscript()
+		return m, nil
+	case modelAppliedMsg:
+		m.running = false
+		m.dialog = dialogNone
+		if x.err != nil {
+			m.err = x.err.Error()
+			m.status = "error"
+			m.appendLine("error: " + x.err.Error())
+		} else {
+			m.err = ""
+			m.status = "ready"
+			state := m.app.Harness.State(m.ctx)
+			m.appendLine(fmt.Sprintf("[model] %s/%s reasoning=%s", state.Agent.Model.Provider, state.Agent.Model.ID, state.Agent.Reasoning))
+		}
+		m.syncTranscript()
+		return m, nil
+	case treeLoadedMsg:
+		m.running = false
+		if x.err != nil {
+			m.err = x.err.Error()
+			m.status = "error"
+			return m, nil
+		}
+		m.err = ""
+		m.status = "tree"
+		m.dialog = dialogTree
+		m.tree = x.tree
+		m.selectedTree = 0
+		for i, entry := range x.tree.Entries {
+			if entry.ID == x.tree.LeafID {
+				m.selectedTree = i
+				break
+			}
+		}
+		return m, nil
+	case treeMovedMsg:
+		m.running = false
+		if x.err != nil {
+			m.err = x.err.Error()
+			m.status = "error"
+			m.appendLine("error: " + x.err.Error())
+			m.syncTranscript()
+			return m, nil
+		}
+		m.dialog = dialogNone
+		m.status = "ready"
+		m.err = ""
+		m.follow = true
+		m.transcript = ""
+		m.appendLine("moved session tree")
+		m.renderSessionTranscript()
+		m.syncTranscript()
+		return m, nil
+	case swarmsLoadedMsg:
+		m.running = false
+		if x.err != nil {
+			m.err = x.err.Error()
+			m.status = "error"
+			return m, nil
+		}
+		m.err = ""
+		m.status = "swarm"
+		m.dialog = dialogSwarm
+		m.swarmServers = x.servers
+		m.selectedSwarm = 0
+		m.swarmStatus = SwarmStatusSummary{}
+		m.selectedSwarmAgent = 0
+		m.swarmLog = ""
+		m.swarmAttached = false
+		m.swarmNotice = fmt.Sprintf("loaded %d swarm server(s)", len(x.servers))
+		if len(x.servers) > 0 && x.servers[0].Reachable {
+			m.running = true
+			return m, m.loadSelectedSwarmStatus()
+		}
+		return m, nil
+	case swarmStatusLoadedMsg:
+		m.running = false
+		if x.err != nil {
+			m.err = x.err.Error()
+			m.status = "swarm"
+			m.swarmStatus = SwarmStatusSummary{}
+			m.swarmNotice = "status error: " + x.err.Error()
+			return m, nil
+		}
+		m.err = ""
+		m.status = "swarm"
+		m.swarmStatus = x.status
+		m.swarmNotice = fmt.Sprintf("status refreshed · agents=%d", len(x.status.Agents))
+		if m.selectedSwarmAgent >= len(m.swarmStatus.Agents) {
+			m.selectedSwarmAgent = max(0, len(m.swarmStatus.Agents)-1)
+		}
+		if m.swarmAttached {
+			m.loadSelectedAgentLog()
+			return m, m.swarmAttachTick()
+		}
+		return m, nil
+	case swarmSentMsg:
+		m.running = false
+		m.swarmPromptMode = ""
+		if x.err != nil {
+			m.err = x.err.Error()
+			m.status = "swarm"
+			m.swarmNotice = "send error: " + x.err.Error()
+			return m, nil
+		}
+		m.err = ""
+		m.status = "swarm"
+		m.swarmStatus = x.status
+		m.swarmNotice = "prompt sent; status refreshed"
+		m.loadSelectedAgentLog()
+		return m, nil
+	case swarmStoppedMsg:
+		m.running = false
+		if x.err != nil {
+			m.err = x.err.Error()
+			m.status = "swarm"
+			m.swarmNotice = "stop error: " + x.err.Error()
+			return m, nil
+		}
+		m.err = ""
+		m.status = "swarm"
+		m.swarmStatus = x.status
+		m.swarmNotice = "agent stop requested; status refreshed"
+		return m, nil
+	case swarmSpawnedMsg:
+		m.running = false
+		m.swarmPromptMode = ""
+		if x.err != nil {
+			m.err = x.err.Error()
+			m.status = "swarm"
+			m.swarmNotice = "spawn error: " + x.err.Error()
+			return m, nil
+		}
+		m.err = ""
+		m.status = "swarm"
+		m.swarmStatus = x.status
+		m.swarmNotice = "agent spawned; status refreshed"
+		if len(m.swarmStatus.Agents) > 0 {
+			m.selectedSwarmAgent = len(m.swarmStatus.Agents) - 1
+		}
+		return m, nil
+	case swarmAttachTickMsg:
+		if !m.swarmAttached || x.id != m.swarmAttachTickID || m.dialog != dialogSwarm {
+			return m, nil
+		}
+		if m.running {
+			return m, m.swarmAttachTick()
+		}
+		m.running = true
+		m.swarmNotice = "auto-refreshing attached agent"
+		return m, m.loadSelectedSwarmStatus()
+	case commandDoneMsg:
+		m.running = false
+		if x.text != "" {
+			m.appendLine(x.text)
+		}
+		if x.err != nil {
+			m.err = x.err.Error()
+			m.status = "error"
+			m.appendLine("error: " + x.err.Error())
+		} else {
+			m.err = ""
+			m.status = "ready"
+		}
+		m.syncTranscript()
+		return m, nil
+	}
+	var cmd tea.Cmd
+	m.input, cmd = m.input.Update(msg)
+	return m, cmd
+}
+
+func (m bubbleModel) View() tea.View {
+	if m.width == 0 {
+		v := tea.NewView("initializing…")
+		v.AltScreen = true
+		return v
+	}
+	inputTitle := m.theme.Help.Render("ctrl+s submit · PgUp/PgDn scroll · End follow · ctrl+o sessions · ctrl+p model · ctrl+t tree · ctrl+w swarm · ? help · ctrl+c quit")
+	body := lipgloss.JoinVertical(lipgloss.Left,
+		m.headerView(),
+		m.theme.Viewport.Width(max(1, m.width-2)).Render(m.viewport.View()),
+		inputTitle,
+		m.theme.Input.Width(max(1, m.width-2)).Render(m.input.View()),
+	)
+	if m.dialog == dialogSessions {
+		body = lipgloss.JoinVertical(lipgloss.Left, body, m.sessionsDialogView())
+	}
+	if m.dialog == dialogModel {
+		body = lipgloss.JoinVertical(lipgloss.Left, body, m.modelDialogView())
+	}
+	if m.dialog == dialogTree {
+		body = lipgloss.JoinVertical(lipgloss.Left, body, m.treeDialogView())
+	}
+	if m.dialog == dialogSwarm {
+		body = lipgloss.JoinVertical(lipgloss.Left, body, m.swarmDialogView())
+	}
+	if m.dialog == dialogHelp {
+		body = lipgloss.JoinVertical(lipgloss.Left, body, m.helpDialogView())
+	}
+	v := tea.NewView(body)
+	v.AltScreen = true
+	v.MouseMode = tea.MouseModeCellMotion
+	v.WindowTitle = "Erasmus"
+	return v
+}
+
+func (m *bubbleModel) resize() {
+	inputHeight := 7
+	headerHeight := 2
+	available := m.height - inputHeight - headerHeight - 1
+	if available < 5 {
+		available = 5
+	}
+	m.viewport.SetWidth(max(10, m.width-6))
+	m.viewport.SetHeight(available)
+	m.input.SetWidth(max(10, m.width-6))
+	m.input.SetHeight(4)
+	m.syncTranscript()
+}
+
+func (m bubbleModel) headerView() string {
+	state := m.app.Harness.State(m.ctx)
+	pill := m.theme.ReadyPill.Render(m.status)
+	if m.running {
+		pill = m.theme.RunningPill.Render("running")
+	}
+	if m.err != "" || m.status == "error" {
+		pill = m.theme.ErrorPill.Render("error")
+	}
+	reasoning := state.Agent.Reasoning
+	if reasoning == "" {
+		reasoning = "default"
+	}
+	left := m.theme.Brand.Render("Erasmus") + " " + pill
+	right := m.theme.Muted.Render(fmt.Sprintf("%s/%s · reasoning %s · session %s", state.Agent.Model.Provider, state.Agent.Model.ID, reasoning, state.Session.ID))
+	if !m.follow {
+		right += m.theme.Muted.Render(fmt.Sprintf(" · scrollback %.0f%% · End to follow", m.viewport.ScrollPercent()*100))
+	}
+	line := lipgloss.JoinHorizontal(lipgloss.Center, left, "  ", right)
+	if m.err != "" {
+		line += "  " + m.theme.Error.Render(m.err)
+	}
+	return m.theme.Header.Width(max(1, m.width-2)).Render(line)
+}
+
+func (m bubbleModel) handleMouse(msg tea.MouseWheelMsg) (tea.Model, tea.Cmd) {
+	switch msg.Button {
+	case tea.MouseWheelUp:
+		m.viewport.ScrollUp(3)
+		m.follow = false
+		return m, nil
+	case tea.MouseWheelDown:
+		m.viewport.ScrollDown(3)
+		m.follow = m.viewport.AtBottom()
+		return m, nil
+	}
+	return m, nil
+}
+
+func (m bubbleModel) handleViewportKey(key tea.KeyPressMsg) (bubbleModel, tea.Cmd, bool) {
+	switch key.String() {
+	case "pgup":
+		m.viewport.PageUp()
+		m.follow = false
+		return m, nil, true
+	case "pgdown":
+		m.viewport.PageDown()
+		m.follow = m.viewport.AtBottom()
+		return m, nil, true
+	case "ctrl+u":
+		m.viewport.HalfPageUp()
+		m.follow = false
+		return m, nil, true
+	case "ctrl+d":
+		m.viewport.HalfPageDown()
+		m.follow = m.viewport.AtBottom()
+		return m, nil, true
+	case "home":
+		m.viewport.GotoTop()
+		m.follow = false
+		return m, nil, true
+	case "end":
+		m.viewport.GotoBottom()
+		m.follow = true
+		return m, nil, true
+	}
+	return m, nil, false
+}
+
+func (m *bubbleModel) submit() (bubbleModel, tea.Cmd) {
+	if m.running {
+		return *m, nil
+	}
+	text := strings.TrimSpace(m.input.Value())
+	if text == "" {
+		return *m, nil
+	}
+	m.input.Reset()
+	if strings.HasPrefix(text, "/") {
+		m.running = true
+		m.status = "command"
+		return *m, m.runCommand(text)
+	}
+	m.running = true
+	m.follow = true
+	m.assistantOpen = false
+	m.status = "running"
+	m.err = ""
+	m.appendUserMessage(text)
+	m.syncTranscript()
+	ch := make(chan tea.Msg, 64)
+	m.messages = ch
+	go func() {
+		events, err := m.app.Harness.Prompt(m.ctx, text, harness.PromptOptions{})
+		if err != nil {
+			ch <- runtimeDoneMsg{err: err}
+			close(ch)
+			return
+		}
+		for ev := range events {
+			ch <- runtimeEventMsg{event: ev}
+		}
+		ch <- runtimeDoneMsg{err: m.app.Harness.Wait(m.ctx)}
+		close(ch)
+	}()
+	return *m, m.waitRuntime()
+}
+
+func (m bubbleModel) updateHelpDialog(key tea.KeyPressMsg) (tea.Model, tea.Cmd) {
+	switch key.String() {
+	case "esc", "?":
+		m.dialog = m.helpReturnDialog
+		m.status = m.dialogStatus(m.dialog)
+		return m, nil
+	case "ctrl+c":
+		return m, tea.Quit
+	}
+	return m, nil
+}
+
+func (m bubbleModel) dialogStatus(dialog dialogMode) string {
+	switch dialog {
+	case dialogSessions:
+		return "sessions"
+	case dialogModel:
+		return "model"
+	case dialogTree:
+		return "tree"
+	case dialogSwarm:
+		return "swarm"
+	default:
+		return "ready"
+	}
+}
+
+func (m bubbleModel) helpDialogView() string {
+	var b strings.Builder
+	b.WriteString("Help — ?/esc close")
+	if m.helpReturnDialog != dialogNone {
+		b.WriteString(" · returns to " + m.dialogName(m.helpReturnDialog))
+	}
+	b.WriteString("\n\n")
+	m.writeCurrentModeHelp(&b)
+	b.WriteString("Global\n")
+	b.WriteString("  ctrl+s        submit prompt / send dialog input\n")
+	b.WriteString("  ctrl+o        sessions\n")
+	b.WriteString("  ctrl+p        model + reasoning\n")
+	b.WriteString("  ctrl+t        session tree\n")
+	b.WriteString("  ctrl+w        swarm dashboard\n")
+	b.WriteString("  ?             context help\n")
+	b.WriteString("  ctrl+c        quit\n\n")
+	b.WriteString("Transcript\n")
+	b.WriteString("  PgUp/PgDn     scroll page\n")
+	b.WriteString("  ctrl+u/d      scroll half page\n")
+	b.WriteString("  Home/End      top / resume follow at bottom\n")
+	b.WriteString("  mouse wheel   scrollback\n")
+	return m.theme.Dialog.Width(max(1, m.width-2)).Render(b.String())
+}
+
+func (m bubbleModel) dialogName(dialog dialogMode) string {
+	switch dialog {
+	case dialogSessions:
+		return "sessions"
+	case dialogModel:
+		return "model"
+	case dialogTree:
+		return "session tree"
+	case dialogSwarm:
+		if m.swarmAttached {
+			return "swarm attach"
+		}
+		return "swarm dashboard"
+	default:
+		return "chat"
+	}
+}
+
+func (m bubbleModel) writeCurrentModeHelp(b *strings.Builder) {
+	b.WriteString("Current mode: " + m.dialogName(m.helpReturnDialog) + "\n")
+	switch m.helpReturnDialog {
+	case dialogSessions:
+		b.WriteString("  ↑/↓ or k/j    select session\n")
+		b.WriteString("  enter         open selected session\n")
+		b.WriteString("  esc/ctrl+o    close sessions\n\n")
+	case dialogModel:
+		b.WriteString("  ↑/↓ or k/j    select model\n")
+		b.WriteString("  ←/→ or h/l    select reasoning\n")
+		b.WriteString("  enter         apply model/reasoning\n")
+		b.WriteString("  esc/ctrl+p    close model picker\n\n")
+	case dialogTree:
+		b.WriteString("  ↑/↓ or k/j    select tree entry\n")
+		b.WriteString("  enter         move session leaf to selected entry\n")
+		b.WriteString("  esc/ctrl+t    close tree browser\n\n")
+	case dialogSwarm:
+		m.writeSwarmHelp(b)
+	default:
+		b.WriteString("  type prompt   compose in input box\n")
+		b.WriteString("  ctrl+s        submit prompt\n")
+		b.WriteString("  /help         line-mode command help\n\n")
+	}
+}
+
+func (m bubbleModel) writeSwarmHelp(b *strings.Builder) {
+	if m.swarmAttached {
+		b.WriteString("  attached mode auto-refreshes status/log every 2s\n")
+		b.WriteString("  s             send prompt to attached agent\n")
+		b.WriteString("  enter         refresh status/log now\n")
+		b.WriteString("  tab/shift+tab switch attached agent\n")
+		b.WriteString("  esc           detach\n")
+		b.WriteString("  ctrl+w        close dashboard\n\n")
+		return
+	}
+	b.WriteString("  ↑/↓ or k/j    select server\n")
+	b.WriteString("  tab/shift+tab select agent\n")
+	b.WriteString("  a             attach/detach selected agent\n")
+	b.WriteString("  n             spawn new agent on selected server\n")
+	b.WriteString("  s             send prompt to selected agent\n")
+	b.WriteString("  x             stop selected agent\n")
+	b.WriteString("  l             load selected agent log tail\n")
+	b.WriteString("  enter         refresh selected server\n")
+	b.WriteString("  r             reload registry\n")
+	b.WriteString("  esc/ctrl+w    close dashboard\n\n")
+}
+
+func (m *bubbleModel) openSessionsDialog() (bubbleModel, tea.Cmd) {
+	if m.running || m.app.ListSessions == nil {
+		if m.app.ListSessions == nil {
+			m.err = "session listing is not configured"
+			m.status = "error"
+		}
+		return *m, nil
+	}
+	m.running = true
+	m.status = "loading sessions"
+	m.err = ""
+	return *m, func() tea.Msg {
+		sessions, err := m.app.ListSessions(m.ctx, "")
+		return sessionsLoadedMsg{sessions: sessions, err: err}
+	}
+}
+
+func (m bubbleModel) updateSessionsDialog(key tea.KeyPressMsg) (tea.Model, tea.Cmd) {
+	switch key.String() {
+	case "esc", "ctrl+o":
+		m.dialog = dialogNone
+		m.status = "ready"
+		return m, nil
+	case "ctrl+c":
+		return m, tea.Quit
+	case "up", "k":
+		if m.selectedSession > 0 {
+			m.selectedSession--
+		}
+	case "down", "j":
+		if m.selectedSession < len(m.sessions)-1 {
+			m.selectedSession++
+		}
+	case "enter":
+		if len(m.sessions) == 0 || m.app.OpenSession == nil {
+			return m, nil
+		}
+		path := m.sessions[m.selectedSession].Path
+		m.running = true
+		m.status = "opening session"
+		return m, func() tea.Msg {
+			var buf bytes.Buffer
+			err := m.app.openSession(m.ctx, &buf, path)
+			return sessionOpenedMsg{path: path, err: err}
+		}
+	}
+	return m, nil
+}
+
+func (m bubbleModel) sessionsDialogView() string {
+	var b strings.Builder
+	b.WriteString("Sessions — ↑/↓ select · enter open · esc close\n")
+	if len(m.sessions) == 0 {
+		b.WriteString("no sessions found")
+		return m.theme.Dialog.Width(max(1, m.width-2)).Render(b.String())
+	}
+	start := 0
+	if m.selectedSession > 8 {
+		start = m.selectedSession - 8
+	}
+	end := min(len(m.sessions), start+10)
+	for i := start; i < end; i++ {
+		entry := m.sessions[i]
+		line := fmt.Sprintf("  %s  id=%s  messages=%d  updated=%s", entry.Path, entry.ID, entry.Messages, entry.Updated)
+		if i == m.selectedSession {
+			line = m.theme.Selected.Render("▸ " + strings.TrimSpace(line))
+		}
+		b.WriteString(line + "\n")
+	}
+	return m.theme.Dialog.Width(max(1, m.width-2)).Render(b.String())
+}
+
+func (m *bubbleModel) renderSessionTranscript() {
+	state := m.app.Harness.State(m.ctx)
+	for _, msg := range state.Agent.Messages {
+		switch msg.Role {
+		case "user":
+			m.appendUserMessage(messageText(msg))
+		case "assistant":
+			m.appendAssistantMessage(messageText(msg))
+		default:
+			m.appendLine(roleLabel(string(msg.Role)) + ": " + messageText(msg))
+		}
+	}
+}
+
+func (m *bubbleModel) openModelDialog() (bubbleModel, tea.Cmd) {
+	if m.running {
+		return *m, nil
+	}
+	state := m.app.Harness.State(m.ctx)
+	m.setModelDialogProvider(state.Agent.Model.Provider, state.Agent.Model)
+	m.selectedReasoning = 0
+	for i, level := range m.reasoningLevels {
+		if level == state.Agent.Reasoning {
+			m.selectedReasoning = i
+			break
+		}
+	}
+	m.dialog = dialogModel
+	m.status = "model"
+	m.err = ""
+	return *m, nil
+}
+
+func (m bubbleModel) updateModelDialog(key tea.KeyPressMsg) (tea.Model, tea.Cmd) {
+	switch key.String() {
+	case "esc", "ctrl+p":
+		m.dialog = dialogNone
+		m.status = "ready"
+		return m, nil
+	case "ctrl+c":
+		return m, tea.Quit
+	case "tab":
+		m.cycleModelProvider(1)
+	case "shift+tab":
+		m.cycleModelProvider(-1)
+	case "up", "k":
+		if m.selectedModel > 0 {
+			m.selectedModel--
+		}
+	case "down", "j":
+		if m.selectedModel < len(m.models)-1 {
+			m.selectedModel++
+		}
+	case "left", "h":
+		if m.selectedReasoning > 0 {
+			m.selectedReasoning--
+		}
+	case "right", "l":
+		if m.selectedReasoning < len(m.reasoningLevels)-1 {
+			m.selectedReasoning++
+		}
+	case "enter":
+		if len(m.models) == 0 {
+			return m, nil
+		}
+		selectedModel := m.models[m.selectedModel]
+		reasoning := m.reasoningLevels[m.selectedReasoning]
+		m.running = true
+		m.status = "applying model"
+		return m, func() tea.Msg {
+			if m.app.ApplyModel != nil {
+				return modelAppliedMsg{err: m.app.ApplyModel(m.ctx, selectedModel, reasoning)}
+			}
+			if selectedModel.Provider == m.app.Harness.State(m.ctx).Agent.Model.Provider {
+				if err := m.app.Harness.SetModel(m.ctx, selectedModel); err != nil {
+					return modelAppliedMsg{err: err}
+				}
+				if err := m.app.Harness.SetReasoning(m.ctx, reasoning); err != nil {
+					return modelAppliedMsg{err: err}
+				}
+				return modelAppliedMsg{}
+			}
+			return modelAppliedMsg{err: fmt.Errorf("provider switching is not configured")}
+		}
+	}
+	return m, nil
+}
+
+func (m *bubbleModel) setModelDialogProvider(providerID string, current model.Model) {
+	models := model.DefaultCatalog().ListProvider(providerID)
+	if len(models) == 0 && current.Provider == providerID {
+		models = []model.Model{current}
+	}
+	m.models = models
+	m.selectedModel = 0
+	for i, candidate := range models {
+		if candidate.Provider == current.Provider && candidate.ID == current.ID {
+			m.selectedModel = i
+			break
+		}
+	}
+}
+
+func (m *bubbleModel) cycleModelProvider(delta int) {
+	providers := modelDialogProviders()
+	if len(providers) == 0 {
+		return
+	}
+	current := ""
+	if len(m.models) > 0 {
+		current = m.models[m.selectedModel].Provider
+	} else {
+		current = m.app.Harness.State(m.ctx).Agent.Model.Provider
+	}
+	idx := 0
+	for i, providerID := range providers {
+		if providerID == current {
+			idx = i
+			break
+		}
+	}
+	idx = (idx + delta + len(providers)) % len(providers)
+	m.setModelDialogProvider(providers[idx], model.Model{})
+}
+
+func modelDialogProviders() []string {
+	seen := map[string]bool{}
+	var providers []string
+	for _, candidate := range model.DefaultCatalog().List() {
+		if candidate.Provider == "" || seen[candidate.Provider] {
+			continue
+		}
+		seen[candidate.Provider] = true
+		providers = append(providers, candidate.Provider)
+	}
+	return providers
+}
+
+func (m bubbleModel) modelDialogView() string {
+	var b strings.Builder
+	providerID := ""
+	if len(m.models) > 0 {
+		providerID = m.models[m.selectedModel].Provider
+	}
+	b.WriteString("Model — tab provider · ↑/↓ select model · ←/→ reasoning · enter apply · esc close\n")
+	if providerID != "" {
+		fmt.Fprintf(&b, "Provider: %s\n", providerID)
+	}
+	for i, candidate := range m.models {
+		name := candidate.DisplayName
+		if name == "" {
+			name = candidate.ID
+		}
+		line := fmt.Sprintf("  %s/%s  %s", candidate.Provider, candidate.ID, name)
+		if i == m.selectedModel {
+			line = m.theme.Selected.Render("▸ " + strings.TrimSpace(line))
+		}
+		b.WriteString(line + "\n")
+	}
+	b.WriteString("\nReasoning: ")
+	for i, level := range m.reasoningLevels {
+		label := level
+		if label == "" {
+			label = "default"
+		}
+		if i == m.selectedReasoning {
+			fmt.Fprintf(&b, "[%s] ", label)
+		} else {
+			fmt.Fprintf(&b, "%s ", label)
+		}
+	}
+	return m.theme.Dialog.Width(max(1, m.width-2)).Render(b.String())
+}
+
+func (m *bubbleModel) openTreeDialog() (bubbleModel, tea.Cmd) {
+	if m.running {
+		return *m, nil
+	}
+	m.running = true
+	m.status = "loading tree"
+	m.err = ""
+	return *m, func() tea.Msg {
+		tree, err := m.app.Harness.Tree(m.ctx)
+		return treeLoadedMsg{tree: tree, err: err}
+	}
+}
+
+func (m bubbleModel) updateTreeDialog(key tea.KeyPressMsg) (tea.Model, tea.Cmd) {
+	switch key.String() {
+	case "esc", "ctrl+t":
+		m.dialog = dialogNone
+		m.status = "ready"
+		return m, nil
+	case "ctrl+c":
+		return m, tea.Quit
+	case "up", "k":
+		if m.selectedTree > 0 {
+			m.selectedTree--
+		}
+	case "down", "j":
+		if m.selectedTree < len(m.tree.Entries)-1 {
+			m.selectedTree++
+		}
+	case "enter":
+		if len(m.tree.Entries) == 0 {
+			return m, nil
+		}
+		id := m.tree.Entries[m.selectedTree].ID
+		m.running = true
+		m.status = "moving tree"
+		return m, func() tea.Msg {
+			err := m.app.Harness.MoveTo(m.ctx, id, nil)
+			return treeMovedMsg{err: err}
+		}
+	}
+	return m, nil
+}
+
+func (m bubbleModel) treeDialogView() string {
+	var b strings.Builder
+	b.WriteString("Session tree — ↑/↓ select · enter move · esc close\n")
+	if len(m.tree.Entries) == 0 {
+		b.WriteString("no tree entries")
+		return m.theme.Dialog.Width(max(1, m.width-2)).Render(b.String())
+	}
+	start := 0
+	if m.selectedTree > 8 {
+		start = m.selectedTree - 8
+	}
+	end := min(len(m.tree.Entries), start+10)
+	for i := start; i < end; i++ {
+		entry := m.tree.Entries[i]
+		leaf := " "
+		if entry.ID == m.tree.LeafID {
+			leaf = "*"
+		}
+		when := ""
+		if !entry.Time.IsZero() {
+			when = entry.Time.Format("15:04:05")
+		}
+		line := fmt.Sprintf("  %s id=%s parent=%s type=%s time=%s", leaf, entry.ID, entry.Parent, entry.Type, when)
+		if i == m.selectedTree {
+			line = m.theme.Selected.Render("▸ " + strings.TrimSpace(line))
+		}
+		b.WriteString(line + "\n")
+	}
+	return m.theme.Dialog.Width(max(1, m.width-2)).Render(b.String())
+}
+
+func (m *bubbleModel) openSwarmDialog() (bubbleModel, tea.Cmd) {
+	if m.running || m.app.ListSwarms == nil {
+		if m.app.ListSwarms == nil {
+			m.err = "swarm listing is not configured"
+			m.status = "error"
+		}
+		return *m, nil
+	}
+	m.running = true
+	m.status = "loading swarms"
+	m.err = ""
+	return *m, func() tea.Msg {
+		servers, err := m.app.ListSwarms(m.ctx)
+		return swarmsLoadedMsg{servers: servers, err: err}
+	}
+}
+
+func (m bubbleModel) updateSwarmDialog(key tea.KeyPressMsg) (tea.Model, tea.Cmd) {
+	if m.swarmPromptMode != "" {
+		switch key.String() {
+		case "esc":
+			m.swarmPromptMode = ""
+			m.input.Reset()
+			return m, nil
+		case "ctrl+s", "enter":
+			return m.submitSwarmPrompt()
+		}
+		var cmd tea.Cmd
+		m.input, cmd = m.input.Update(key)
+		return m, cmd
+	}
+	switch key.String() {
+	case "esc":
+		if m.swarmAttached {
+			m.detachSwarmAgent("detached from swarm agent")
+			return m, nil
+		}
+		m.dialog = dialogNone
+		m.status = "ready"
+		return m, nil
+	case "ctrl+w":
+		m.detachSwarmAgent("")
+		m.dialog = dialogNone
+		m.status = "ready"
+		return m, nil
+	case "ctrl+c":
+		return m, tea.Quit
+	case "r":
+		m.swarmNotice = "reloading swarm registry"
+		return m.openSwarmDialog()
+	case "tab":
+		if len(m.swarmStatus.Agents) > 0 {
+			m.selectedSwarmAgent = (m.selectedSwarmAgent + 1) % len(m.swarmStatus.Agents)
+			m.swarmLog = ""
+			if m.swarmAttached {
+				m.loadSelectedAgentLog()
+				m.swarmNotice = "attached to " + m.swarmStatus.Agents[m.selectedSwarmAgent].ID
+			}
+		}
+	case "shift+tab":
+		if len(m.swarmStatus.Agents) > 0 {
+			m.selectedSwarmAgent--
+			if m.selectedSwarmAgent < 0 {
+				m.selectedSwarmAgent = len(m.swarmStatus.Agents) - 1
+			}
+			m.swarmLog = ""
+			if m.swarmAttached {
+				m.loadSelectedAgentLog()
+				m.swarmNotice = "attached to " + m.swarmStatus.Agents[m.selectedSwarmAgent].ID
+			}
+		}
+	case "a":
+		return m, m.toggleSwarmAttach()
+	case "l":
+		m.loadSelectedAgentLog()
+	case "x":
+		return m.stopSelectedSwarmAgent()
+	case "s":
+		if len(m.swarmStatus.Agents) > 0 && m.app.SwarmSend != nil {
+			m.swarmPromptMode = "send"
+			m.input.Reset()
+			m.input.SetValue("")
+		}
+	case "n":
+		if len(m.swarmServers) > 0 && m.swarmServers[m.selectedSwarm].Reachable && m.app.SwarmSpawn != nil {
+			m.swarmPromptMode = "spawn"
+			m.input.Reset()
+			m.input.SetValue("")
+		}
+	case "up", "k":
+		if m.selectedSwarm > 0 {
+			m.selectedSwarm--
+			m.swarmStatus = SwarmStatusSummary{}
+			m.selectedSwarmAgent = 0
+			m.swarmLog = ""
+			m.detachSwarmAgent("")
+			m.swarmNotice = "selected server " + m.swarmServers[m.selectedSwarm].Name
+			if m.swarmServers[m.selectedSwarm].Reachable {
+				m.running = true
+				return m, m.loadSelectedSwarmStatus()
+			}
+		}
+	case "down", "j":
+		if m.selectedSwarm < len(m.swarmServers)-1 {
+			m.selectedSwarm++
+			m.swarmStatus = SwarmStatusSummary{}
+			m.selectedSwarmAgent = 0
+			m.swarmLog = ""
+			m.detachSwarmAgent("")
+			m.swarmNotice = "selected server " + m.swarmServers[m.selectedSwarm].Name
+			if m.swarmServers[m.selectedSwarm].Reachable {
+				m.running = true
+				return m, m.loadSelectedSwarmStatus()
+			}
+		}
+	case "enter":
+		if len(m.swarmServers) > 0 && m.swarmServers[m.selectedSwarm].Reachable {
+			m.running = true
+			if m.swarmAttached {
+				m.swarmNotice = "refreshing attached agent"
+			} else {
+				m.swarmNotice = "refreshing selected server"
+			}
+			return m, m.loadSelectedSwarmStatus()
+		}
+	}
+	return m, nil
+}
+
+func (m *bubbleModel) toggleSwarmAttach() tea.Cmd {
+	if len(m.swarmStatus.Agents) == 0 || m.selectedSwarmAgent >= len(m.swarmStatus.Agents) {
+		m.swarmNotice = "no selected swarm agent to attach"
+		return nil
+	}
+	if m.swarmAttached {
+		m.detachSwarmAgent("detached from " + m.swarmStatus.Agents[m.selectedSwarmAgent].ID)
+		return nil
+	}
+	m.swarmAttached = true
+	m.swarmAttachTickID++
+	m.loadSelectedAgentLog()
+	m.swarmNotice = "attached to " + m.swarmStatus.Agents[m.selectedSwarmAgent].ID
+	return m.swarmAttachTick()
+}
+
+func (m *bubbleModel) detachSwarmAgent(notice string) {
+	m.swarmAttached = false
+	m.swarmAttachTickID++
+	if notice != "" {
+		m.swarmNotice = notice
+	}
+}
+
+func (m bubbleModel) swarmAttachTick() tea.Cmd {
+	id := m.swarmAttachTickID
+	return tea.Tick(2*time.Second, func(time.Time) tea.Msg {
+		return swarmAttachTickMsg{id: id}
+	})
+}
+
+func (m bubbleModel) stopSelectedSwarmAgent() (tea.Model, tea.Cmd) {
+	if len(m.swarmStatus.Agents) == 0 || m.app.SwarmStop == nil || len(m.swarmServers) == 0 {
+		return m, nil
+	}
+	server := m.swarmServers[m.selectedSwarm]
+	agent := m.swarmStatus.Agents[m.selectedSwarmAgent]
+	m.running = true
+	m.status = "stopping swarm agent"
+	m.err = ""
+	return m, func() tea.Msg {
+		status, err := m.app.SwarmStop(m.ctx, server, agent.ID)
+		return swarmStoppedMsg{status: status, err: err}
+	}
+}
+
+func (m *bubbleModel) submitSwarmPrompt() (bubbleModel, tea.Cmd) {
+	text := strings.TrimSpace(m.input.Value())
+	if text == "" || len(m.swarmServers) == 0 {
+		return *m, nil
+	}
+	server := m.swarmServers[m.selectedSwarm]
+	mode := m.swarmPromptMode
+	m.input.Reset()
+	m.swarmPromptMode = ""
+	m.running = true
+	m.err = ""
+	if mode == "spawn" {
+		if m.app.SwarmSpawn == nil {
+			m.running = false
+			return *m, nil
+		}
+		m.status = "spawning swarm agent"
+		return *m, func() tea.Msg {
+			status, err := m.app.SwarmSpawn(m.ctx, server, text)
+			return swarmSpawnedMsg{status: status, err: err}
+		}
+	}
+	if len(m.swarmStatus.Agents) == 0 || m.app.SwarmSend == nil {
+		m.running = false
+		return *m, nil
+	}
+	agent := m.swarmStatus.Agents[m.selectedSwarmAgent]
+	m.status = "sending swarm prompt"
+	return *m, func() tea.Msg {
+		status, err := m.app.SwarmSend(m.ctx, server, agent.ID, text)
+		return swarmSentMsg{status: status, err: err}
+	}
+}
+
+func (m bubbleModel) loadSelectedSwarmStatus() tea.Cmd {
+	return func() tea.Msg {
+		if m.app.SwarmStatus == nil || len(m.swarmServers) == 0 {
+			return swarmStatusLoadedMsg{}
+		}
+		status, err := m.app.SwarmStatus(m.ctx, m.swarmServers[m.selectedSwarm])
+		return swarmStatusLoadedMsg{status: status, err: err}
+	}
+}
+
+func (m *bubbleModel) loadSelectedAgentLog() {
+	if len(m.swarmStatus.Agents) == 0 || m.selectedSwarmAgent >= len(m.swarmStatus.Agents) {
+		m.swarmNotice = "no selected swarm agent"
+		return
+	}
+	agent := m.swarmStatus.Agents[m.selectedSwarmAgent]
+	path := agent.EventLog
+	if path == "" {
+		m.swarmLog = "no event log path for selected agent"
+		m.swarmNotice = "no event log for " + agent.ID
+		return
+	}
+	data, err := os.ReadFile(path)
+	if err != nil {
+		m.swarmLog = "log error: " + err.Error()
+		m.swarmNotice = "log error for " + agent.ID
+		return
+	}
+	m.swarmLog = tailLines(string(data), 12)
+	m.swarmNotice = fmt.Sprintf("loaded log tail for %s", agent.ID)
+}
+
+func (m bubbleModel) swarmDialogView() string {
+	var b strings.Builder
+	switch m.swarmPromptMode {
+	case "send":
+		b.WriteString("Swarm dashboard — type prompt for selected agent · ctrl+s/enter send · esc cancel\n")
+	case "spawn":
+		b.WriteString("Swarm dashboard — type task for new agent · ctrl+s/enter spawn · esc cancel\n")
+	default:
+		b.WriteString("Swarm dashboard — ↑/↓ server · tab agent · a attach · n spawn · s send · x stop · l logs · enter refresh · r reload · esc close\n")
+	}
+	if m.swarmNotice != "" {
+		b.WriteString("Status: " + m.swarmNotice + "\n")
+	}
+	if len(m.swarmServers) == 0 {
+		b.WriteString("no registered swarm servers")
+		return m.theme.Dialog.Width(max(1, m.width-2)).Render(b.String())
+	}
+	for i, server := range m.swarmServers {
+		reachable := "stale"
+		if server.Reachable {
+			reachable = "reachable"
+		}
+		line := fmt.Sprintf("  %s  %s  %s  agents=%d  %s", server.Name, server.Status, reachable, len(m.swarmStatus.Agents), server.Socket)
+		if i != m.selectedSwarm {
+			line = fmt.Sprintf("  %s  %s  %s  %s", server.Name, server.Status, reachable, server.Socket)
+		}
+		if i == m.selectedSwarm {
+			line = m.theme.Selected.Render("▸ " + strings.TrimSpace(line))
+		}
+		b.WriteString(line + "\n")
+		if i == m.selectedSwarm && server.Error != "" {
+			fmt.Fprintf(&b, "    error: %s\n", server.Error)
+		}
+	}
+	if len(m.swarmStatus.Agents) > 0 || m.swarmStatus.Uptime != "" {
+		fmt.Fprintf(&b, "\nSelected: pid=%d uptime=%s cwd=%s model=%s/%s\n", m.swarmStatus.PID, m.swarmStatus.Uptime, m.swarmStatus.CWD, m.swarmStatus.Provider, m.swarmStatus.Model)
+		b.WriteString("Agents:\n")
+		for i, agent := range m.swarmStatus.Agents {
+			state := agent.State
+			if state == "" {
+				state = "idle"
+				if agent.Running {
+					state = "running"
+				}
+			}
+			modelName := agent.Model
+			if agent.Provider != "" && agent.Model != "" {
+				modelName = agent.Provider + "/" + agent.Model
+			}
+			lastEvent := agent.LastEventType
+			if !agent.LastEventAt.IsZero() {
+				lastEvent = fmt.Sprintf("%s@%s", lastEvent, agent.LastEventAt.Format("15:04:05"))
+			}
+			line := fmt.Sprintf("  %s  %s  msgs=%d tools=%d events=%d last=%s session=%s model=%s  %s", agent.ID, state, agent.Messages, agent.PendingTools, agent.Events, lastEvent, agent.SessionID, modelName, agent.Task)
+			if i == m.selectedSwarmAgent {
+				line = m.theme.Selected.Render("▸ " + strings.TrimSpace(line))
+			}
+			b.WriteString(line + "\n")
+		}
+	}
+	if m.swarmAttached && len(m.swarmStatus.Agents) > 0 {
+		fmt.Fprintf(&b, "\nAttached to %s — auto-refresh 2s · s send · enter refresh now · tab switch agent · esc detach.\n", m.swarmStatus.Agents[m.selectedSwarmAgent].ID)
+	}
+	if m.swarmPromptMode == "send" && len(m.swarmStatus.Agents) > 0 {
+		fmt.Fprintf(&b, "\nPrompting agent %s; compose in input box below.\n", m.swarmStatus.Agents[m.selectedSwarmAgent].ID)
+	}
+	if m.swarmPromptMode == "spawn" {
+		b.WriteString("\nComposing task for a new swarm agent in the input box below.\n")
+	}
+	if m.swarmLog != "" {
+		b.WriteString("\nLog tail:\n")
+		b.WriteString(m.swarmLog)
+		if !strings.HasSuffix(m.swarmLog, "\n") {
+			b.WriteString("\n")
+		}
+	}
+	return m.theme.Dialog.Width(max(1, m.width-2)).Render(b.String())
+}
+
+func (m *bubbleModel) runCommand(line string) tea.Cmd {
+	return func() tea.Msg {
+		if line == "/quit" || line == "/exit" {
+			return tea.Quit()
+		}
+		var buf bytes.Buffer
+		handled, err := m.app.handleCommand(m.ctx, &buf, line)
+		if !handled {
+			err = fmt.Errorf("unknown command %q", line)
+		}
+		return commandDoneMsg{text: strings.TrimSpace(buf.String()), err: err}
+	}
+}
+
+func (m *bubbleModel) waitRuntime() tea.Cmd {
+	ch := m.messages
+	return func() tea.Msg {
+		if ch == nil {
+			return runtimeDoneMsg{}
+		}
+		msg, ok := <-ch
+		if !ok {
+			return runtimeDoneMsg{}
+		}
+		return msg
+	}
+}
+
+func (m *bubbleModel) applyEvent(ev event.Event) {
+	switch e := ev.(type) {
+	case event.MessageStart:
+		if e.Message.Role == "assistant" && !m.assistantOpen {
+			m.appendAssistantStart()
+		}
+	case event.MessageDelta:
+		if !m.assistantOpen {
+			m.appendAssistantStart()
+		}
+		m.transcript += e.Text
+	case event.ToolExecutionStart:
+		m.appendLine(fmt.Sprintf("\n`tool start` **%s** %s", e.Name, strings.TrimSpace(string(e.Args))))
+	case event.ToolExecutionProgress:
+		if strings.TrimSpace(e.Text) != "" {
+			m.appendLine(fmt.Sprintf("`tool progress` %s %s", e.ID, e.Text))
+		}
+	case event.ToolExecutionEnd:
+		status := "done"
+		if e.IsError {
+			status = "error"
+		}
+		m.appendLine(fmt.Sprintf("`tool end` **%s** %s", e.Name, status))
+	case event.AgentEnd:
+		m.assistantOpen = false
+		m.appendLine("")
+	case event.ModelUpdate:
+		m.appendLine(fmt.Sprintf("[model] %s/%s", e.Model.Provider, e.Model.ID))
+	case event.ReasoningUpdate:
+		m.appendLine("[reasoning] " + e.Reasoning)
+	case event.SessionCompact:
+		m.appendLine("[compact] " + e.Summary)
+	case event.ResourcesUpdate:
+		m.appendLine(fmt.Sprintf("[resources] %d skills", len(e.Skills)))
+	}
+	m.syncTranscript()
+}
+
+func roleLabel(role string) string {
+	return "**" + role + "**"
+}
+
+func (m *bubbleModel) appendUserMessage(text string) {
+	m.ensureBlockBreak()
+	m.transcript += "> " + strings.ReplaceAll(strings.TrimSpace(text), "\n", "\n> ") + "\n\n"
+}
+
+func (m *bubbleModel) appendAssistantStart() {
+	m.ensureBlockBreak()
+	m.assistantOpen = true
+}
+
+func (m *bubbleModel) appendAssistantMessage(text string) {
+	m.ensureBlockBreak()
+	m.transcript += strings.TrimSpace(text) + "\n\n"
+}
+
+func (m *bubbleModel) ensureBlockBreak() {
+	m.transcript = strings.TrimRight(m.transcript, "\n")
+	if m.transcript != "" {
+		m.transcript += "\n\n"
+	}
+}
+
+func (m *bubbleModel) appendLine(s string) {
+	if m.transcript != "" && !strings.HasSuffix(m.transcript, "\n") {
+		m.transcript += "\n"
+	}
+	m.transcript += s
+	if !strings.HasSuffix(s, "\n") {
+		m.transcript += "\n"
+	}
+}
+
+func (m *bubbleModel) syncTranscript() {
+	m.renderedTranscript = m.renderTranscript()
+	m.viewport.SetContent(m.renderedTranscript)
+	if m.follow {
+		m.viewport.GotoBottom()
+	}
+}
+
+func (m *bubbleModel) renderTranscript() string {
+	if m.renderer == nil {
+		return m.transcript
+	}
+	rendered, err := m.renderer.Render(m.transcript)
+	if err != nil {
+		return m.transcript
+	}
+	return strings.TrimRight(rendered, "\n")
+}
+
+func (a *App) runBubble(ctx context.Context, in io.Reader, out io.Writer) error {
+	p := tea.NewProgram(newBubbleModel(ctx, a), tea.WithInput(in), tea.WithOutput(out))
+	_, err := p.Run()
+	return err
+}
+
+func max(a, b int) int {
+	if a > b {
+		return a
+	}
+	return b
+}
+
+func min(a, b int) int {
+	if a < b {
+		return a
+	}
+	return b
+}
+
+func tailLines(text string, n int) string {
+	lines := strings.Split(strings.TrimRight(text, "\n"), "\n")
+	if n > 0 && len(lines) > n {
+		lines = lines[len(lines)-n:]
+	}
+	return strings.Join(lines, "\n")
+}

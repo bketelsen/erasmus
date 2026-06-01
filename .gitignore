@@ -1,0 +1,54 @@
+# Built binaries
+/erasmus
+/erasmus.exe
+
+# Build/release output
+/dist/
+/bin/
+/build/
+
+# Test and coverage artifacts
+*.test
+*.prof
+*.cover
+*.out
+coverage.out
+coverage.html
+/coverage/
+
+# Local Erasmus runtime state
+.erasmus/
+*.jsonl
+erasmus-config.json
+erasmus-auth.json
+
+# Pre-release planning and migration notes
+/docs/prerelease/
+
+# Local config/auth files and secrets
+.env
+.env.*
+*.pem
+*.key
+*.crt
+
+# OS/editor noise
+.DS_Store
+Thumbs.db
+*.swp
+*.swo
+*~
+.vscode/
+.idea/
+
+# Local agent/tool state
+.agents/
+.codex/
+
+# Go workspace/local module files
+go.work
+go.work.sum
+
+# Logs and temp files
+*.log
+/tmp/

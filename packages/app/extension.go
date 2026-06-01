@@ -1,0 +1,193 @@
+package app
+
+import (
+	"context"
+	"encoding/json"
+	"fmt"
+	"io"
+	"strings"
+
+	"erasmus/packages/config"
+	"erasmus/packages/extension"
+	"erasmus/packages/tool"
+)
+
+// ExtensionListProcess starts an extension process and prints registered tools/commands.
+func ExtensionListProcess(ctx context.Context, out io.Writer, command string, args ...string) error {
+	if strings.TrimSpace(command) == "" {
+		return fmt.Errorf("extension command is required")
+	}
+	if out == nil {
+		out = io.Discard
+	}
+	proc, err := extension.StartProcess(ctx, command, args...)
+	if err != nil {
+		return err
+	}
+	defer proc.Close()
+	for _, t := range proc.Manager().Registry().List() {
+		fmt.Fprintf(out, "tool\t%s\t%s\n", t.Name(), t.Description())
+	}
+	for _, c := range proc.Manager().Commands() {
+		fmt.Fprintf(out, "command\t%s\t%s\n", c.Name(), c.Description())
+	}
+	printExtensionDiagnostics(out, proc.Diagnostics())
+	return nil
+}
+
+// ExtensionExecProcess starts an extension process and executes one registered command.
+func ExtensionExecProcess(ctx context.Context, out io.Writer, processCommand string, processArgs []string, commandName string, input string) error {
+	if strings.TrimSpace(processCommand) == "" {
+		return fmt.Errorf("extension command is required")
+	}
+	if strings.TrimSpace(commandName) == "" {
+		return fmt.Errorf("registered command name is required")
+	}
+	if out == nil {
+		out = io.Discard
+	}
+	proc, err := extension.StartProcess(ctx, processCommand, processArgs...)
+	if err != nil {
+		return err
+	}
+	defer proc.Close()
+	cmd, ok := proc.Manager().Command(commandName)
+	if !ok {
+		return fmt.Errorf("extension command %q is not registered", commandName)
+	}
+	res, err := cmd.Execute(ctx, commandInput(input))
+	if err != nil {
+		return err
+	}
+	actions := append([]extension.HostAction(nil), res.Actions...)
+	actions = append(actions, proc.Manager().DrainHostActions()...)
+	if len(actions) == 0 {
+		fmt.Fprintln(out, "ok")
+		printExtensionDiagnostics(out, proc.Diagnostics())
+		return nil
+	}
+	for _, action := range actions {
+		data := string(action.Data)
+		if data == "" {
+			data = "{}"
+		}
+		fmt.Fprintf(out, "action\t%s\t%s\n", action.Type, data)
+	}
+	printExtensionDiagnostics(out, proc.Diagnostics())
+	return nil
+}
+
+func printExtensionDiagnostics(out io.Writer, diagnostics []string) {
+	for _, line := range diagnostics {
+		fmt.Fprintf(out, "diagnostic\t%s\n", line)
+	}
+}
+
+func commandInput(input string) json.RawMessage {
+	input = strings.TrimSpace(input)
+	if input == "" {
+		return json.RawMessage(`{}`)
+	}
+	if json.Valid([]byte(input)) {
+		return json.RawMessage(input)
+	}
+	data, _ := json.Marshal(map[string]string{"text": input})
+	return data
+}
+
+// ConfiguredExtensions is a running set of configured extension subprocesses.
+type ConfiguredExtensions struct {
+	procs []*extension.Process
+	tools tool.Registry
+}
+
+// Tools returns all registered subprocess tools.
+func (e *ConfiguredExtensions) Tools() tool.Registry {
+	if e == nil {
+		return nil
+	}
+	return e.tools
+}
+
+// Close terminates all subprocesses.
+func (e *ConfiguredExtensions) Close() {
+	if e == nil {
+		return
+	}
+	for i := len(e.procs) - 1; i >= 0; i-- {
+		_ = e.procs[i].Close()
+	}
+}
+
+// Commands returns all registered subprocess commands.
+func (e *ConfiguredExtensions) Commands() []extension.Command {
+	if e == nil {
+		return nil
+	}
+	var out []extension.Command
+	for _, proc := range e.procs {
+		out = append(out, proc.Manager().Commands()...)
+	}
+	return out
+}
+
+// Diagnostics returns recent diagnostics from all subprocesses.
+func (e *ConfiguredExtensions) Diagnostics() []string {
+	if e == nil {
+		return nil
+	}
+	var out []string
+	for _, proc := range e.procs {
+		out = append(out, proc.Diagnostics()...)
+	}
+	return out
+}
+
+// Command returns the first registered subprocess command with name.
+func (e *ConfiguredExtensions) Command(name string) (extension.Command, bool) {
+	if e == nil {
+		return nil, false
+	}
+	for _, proc := range e.procs {
+		if cmd, ok := proc.Manager().Command(name); ok {
+			return cmd, true
+		}
+	}
+	return nil, false
+}
+
+// StartConfiguredExtensionSet starts configured extension subprocesses.
+func StartConfiguredExtensionSet(ctx context.Context, cfg config.Config) (*ConfiguredExtensions, error) {
+	if len(cfg.Extensions) == 0 {
+		return nil, nil
+	}
+	set := &ConfiguredExtensions{}
+	var tools []tool.Tool
+	for _, ext := range cfg.Extensions {
+		if strings.TrimSpace(ext.Command) == "" {
+			set.Close()
+			return nil, fmt.Errorf("extension command is required")
+		}
+		proc, err := extension.StartProcess(ctx, ext.Command, ext.Args...)
+		if err != nil {
+			set.Close()
+			return nil, err
+		}
+		set.procs = append(set.procs, proc)
+		tools = append(tools, proc.Manager().Registry().List()...)
+	}
+	set.tools = tool.NewRegistry(tools...)
+	return set, nil
+}
+
+// StartConfiguredExtensions starts configured extension subprocesses and returns their tools.
+func StartConfiguredExtensions(ctx context.Context, cfg config.Config) (tool.Registry, func(), error) {
+	set, err := StartConfiguredExtensionSet(ctx, cfg)
+	if err != nil {
+		return nil, nil, err
+	}
+	if set == nil {
+		return nil, func() {}, nil
+	}
+	return set.Tools(), set.Close, nil
+}

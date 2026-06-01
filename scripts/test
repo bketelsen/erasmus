@@ -1,0 +1,132 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+testhome="$(mktemp -d)"
+tmp=""
+trap 'rm -rf "$testhome" "$tmp" /tmp/erasmus-test-bin' EXIT
+export ERASMUS_CONFIG_FILE="$testhome/config.json"
+export ERASMUS_AUTH_FILE="$testhome/auth.json"
+export XDG_STATE_HOME="$testhome/state"
+
+go test ./...
+go run ./cmd/erasmus --version >/dev/null
+go run ./cmd/erasmus run "hello" >/dev/null
+go run ./cmd/erasmus run --memory --show-tools "read docs/plan.md" | grep '\[tool start\] read' >/dev/null
+runsession="$testhome/run.jsonl"
+go run ./cmd/erasmus run --session "$runsession" "hello durable" >/dev/null
+grep 'hello durable' "$runsession" >/dev/null
+go run ./cmd/erasmus sessions list "$testhome" | grep 'run.jsonl' >/dev/null
+go run ./cmd/erasmus session show "$runsession" | grep 'hello durable' >/dev/null
+go run ./cmd/erasmus session tree "$runsession" | grep 'entries=' >/dev/null
+go run ./cmd/erasmus models | grep fake/echo >/dev/null
+go run ./cmd/erasmus swarm run "hello" | grep 'swarm agent main settled' >/dev/null
+go run ./cmd/erasmus swarm run --subprocess "hello subprocess" | grep 'swarm agent main settled' >/dev/null
+printf '%s\n%s\n%s\n' '{"id":"1","method":"spawn","params":{"id":"main","task":"stdio swarm","memory":true}}' '{"id":"2","method":"wait","params":{"id":"main"}}' '{"id":"3","method":"close"}' | go run ./cmd/erasmus swarm child --stdio | grep '"ok":true' >/dev/null
+sock="$testhome/swarm.sock"
+go run ./cmd/erasmus swarm serve --socket "$sock" --name smoke >/dev/null 2>"$testhome/swarm-serve.err" &
+swarmpid=$!
+for _ in $(seq 1 50); do [ -S "$sock" ] && break; if ! kill -0 "$swarmpid" 2>/dev/null; then cat "$testhome/swarm-serve.err" >&2; exit 1; fi; sleep 0.1; done
+[ -S "$sock" ] || { cat "$testhome/swarm-serve.err" >&2; exit 1; }
+go run ./cmd/erasmus swarm spawn --socket "$sock" --id cli --memory "socket cli" | grep '"id":"cli"' >/dev/null
+go run ./cmd/erasmus swarm wait --socket "$sock" cli | grep '"running":false' >/dev/null
+go run ./cmd/erasmus swarm list --socket "$sock" | grep '"id":"cli"' >/dev/null
+go run ./cmd/erasmus swarm status --socket "$sock" | grep '"pid":' >/dev/null
+go run ./cmd/erasmus swarm ps | grep '"reachable":true' >/dev/null
+go run ./cmd/erasmus swarm status smoke | grep '"pid":' >/dev/null
+go run ./cmd/erasmus swarm dashboard smoke --once | grep 'server pid=' >/dev/null
+go run ./cmd/erasmus swarm logs smoke cli | grep 'message_delta' >/dev/null
+printf '/quit\n' | go run ./cmd/erasmus swarm attach smoke cli | grep 'attached to cli' >/dev/null
+go run ./cmd/erasmus swarm close --name smoke | grep '"closed":true' >/dev/null
+go run ./cmd/erasmus swarm prune | grep '"name":"smoke"' >/dev/null
+wait "$swarmpid" || { cat "$testhome/swarm-serve.err" >&2; exit 1; }
+swarmsession="$testhome/swarm.jsonl"
+go run ./cmd/erasmus swarm run --session "$swarmsession" "hello swarm durable" | grep 'swarm agent main settled' >/dev/null
+grep 'hello swarm durable' "$swarmsession" >/dev/null
+swarmdir="$testhome/swarms"
+go run ./cmd/erasmus swarm run --session-dir "$swarmdir" "hello swarm dir" | grep 'swarm agent main settled' >/dev/null
+grep 'hello swarm dir' "$swarmdir/main.jsonl" >/dev/null
+printf 'hello\n/help\n/status\n/model\n/tree\n/move 1\n/branch 1\n/quit\n' | go run ./cmd/erasmus tui --memory --theme plain | grep 'branch session=' >/dev/null
+tuisessiondir="$testhome/tui-sessions"
+mkdir -p "$tuisessiondir"
+go run ./cmd/erasmus run --session "$tuisessiondir/one.jsonl" "hello tui one" >/dev/null
+go run ./cmd/erasmus run --session "$tuisessiondir/two.jsonl" "hello tui two" >/dev/null
+printf '/sessions %s\n/open %s\n/messages 2\n/tree\n/quit\n' "$tuisessiondir" "$tuisessiondir/one.jsonl" | go run ./cmd/erasmus tui --session "$tuisessiondir/two.jsonl" | grep 'opened session=' >/dev/null
+printf '%s\n%s\n%s\n%s\n%s\n%s\n%s\n%s\n%s\n%s\n%s\n%s\n%s\n' '{"id":"1","method":"models"}' '{"id":"2","method":"auth_login","params":{"provider":"fake","api_key":"secret"}}' '{"id":"3","method":"runtime_create","params":{"id":"main"}}' '{"id":"4","method":"runtime_set_reasoning","params":{"runtime_id":"main","reasoning":"low"}}' '{"id":"5","method":"runtime_reload_skills","params":{"runtime_id":"main"}}' '{"id":"6","method":"runtime_prompt","params":{"runtime_id":"main","text":"hello"}}' '{"id":"7","method":"runtime_wait","params":{"runtime_id":"main"}}' '{"id":"8","method":"runtime_tree","params":{"runtime_id":"main"}}' '{"id":"9","method":"runtime_move_to","params":{"runtime_id":"main","entry_id":"1","summary":"back"}}' '{"id":"10","method":"runtime_branch","params":{"runtime_id":"main","entry_id":"1"}}' '{"id":"11","method":"runtime_checkpoint","params":{"runtime_id":"main","label":"smoke"}}' '{"id":"12","method":"runtime_compact","params":{"runtime_id":"main","keep_tail":1}}' '{"id":"13","method":"auth_logout","params":{"provider":"fake"}}' | go run ./cmd/erasmus rpc | grep 'message_delta' >/dev/null
+
+skilltmp="$(mktemp -d)"
+mkdir -p "$skilltmp"
+printf '# Review code\nCheck things.\n' > "$skilltmp/review.md"
+ERASMUS_SKILL_DIR="$skilltmp" go run ./cmd/erasmus skills | grep review >/dev/null
+ERASMUS_SKILL_DIR="$skilltmp" go run ./cmd/erasmus skill review main.go | grep 'fake response' >/dev/null
+rm -rf "$skilltmp"
+
+exttmp="$(mktemp -d)"
+printf '%s\n' '#!/usr/bin/env bash' \
+  'printf '\''%s\n'\'' '\''{"type":"hello","data":{"name":"smoke"}}'\''' \
+  'printf '\''%s\n'\'' '\''{"type":"register_tool","data":{"name":"smoke_tool","description":"smoke tool"}}'\''' \
+  'while IFS= read -r line; do :; done' > "$exttmp/ext.sh"
+chmod +x "$exttmp/ext.sh"
+go run ./cmd/erasmus extension list "$exttmp/ext.sh" | grep 'smoke_tool' >/dev/null
+cat > "$exttmp/cmd.py" <<'PY'
+#!/usr/bin/env python3
+import json, sys
+print(json.dumps({"type":"hello","data":{"name":"smoke"}}), flush=True)
+print(json.dumps({"type":"register_command","data":{"name":"hello","description":"hello command"}}), flush=True)
+for line in sys.stdin:
+    frame = json.loads(line)
+    if frame.get("type") == "command_call":
+        text = frame.get("data", {}).get("input", {}).get("text", "")
+        print(json.dumps({"type":"command_result","id":frame.get("id"),"data":{"actions":[{"type":"print","data":{"text":"hello " + text}}]}}), flush=True)
+PY
+chmod +x "$exttmp/cmd.py"
+go run ./cmd/erasmus extension exec "$exttmp/cmd.py" -- hello world | grep 'hello world' >/dev/null
+printf '%s\n' '#!/usr/bin/env bash' \
+  'printf '\''%s\n'\'' '\''not json'\''' \
+  'printf '\''%s\n'\'' '\''bad startup'\'' >&2' \
+  'sleep 3' > "$exttmp/bad.sh"
+chmod +x "$exttmp/bad.sh"
+badout="$(go run ./cmd/erasmus extension list "$exttmp/bad.sh" 2>&1 || true)"
+printf '%s\n' "$badout" | grep 'bad startup' >/dev/null
+printf '%s\n%s\n%s\n%s\n' \
+  "{\"id\":\"1\",\"method\":\"runtime_create\",\"params\":{\"id\":\"ext\",\"extensions\":[{\"command\":\"$exttmp/cmd.py\"}]}}" \
+  '{"id":"2","method":"runtime_extension_commands","params":{"runtime_id":"ext"}}' \
+  '{"id":"3","method":"runtime_extension_command","params":{"runtime_id":"ext","command":"hello","input":{"text":"rpc"}}}' \
+  '{"id":"4","method":"runtime_close","params":{"runtime_id":"ext"}}' \
+  | go run ./cmd/erasmus rpc | grep 'hello rpc' >/dev/null
+cat > "$exttmp/ext.py" <<'PY'
+#!/usr/bin/env python3
+import json, sys
+print(json.dumps({"type":"hello","data":{"name":"smoke"}}), flush=True)
+print(json.dumps({"type":"register_tool","data":{"name":"smoke_tool","description":"smoke tool"}}), flush=True)
+for line in sys.stdin:
+    frame = json.loads(line)
+    if frame.get("type") == "tool_call":
+        print(json.dumps({"type":"tool_result","id":frame.get("id"),"data":{"result":{"content":[{"text":"smoke extension result"}]}}}), flush=True)
+PY
+chmod +x "$exttmp/ext.py"
+ERASMUS_CONFIG_FILE="$exttmp/config.json" go run ./cmd/erasmus config set extension "$exttmp/ext.py" >/dev/null
+ERASMUS_CONFIG_FILE="$exttmp/config.json" go run ./cmd/erasmus run "use-tool smoke_tool" | grep 'smoke extension result' >/dev/null
+rm -rf "$exttmp"
+
+cfgfile="$(mktemp)"
+ERASMUS_CONFIG_FILE="$cfgfile" go run ./cmd/erasmus config get | grep fake >/dev/null
+ERASMUS_CONFIG_FILE="$cfgfile" go run ./cmd/erasmus config set tools read,write | grep read >/dev/null
+ERASMUS_CONFIG_FILE="$cfgfile" go run ./cmd/erasmus config get | grep write >/dev/null
+rm -f "$cfgfile"
+
+authfile="$(mktemp)"
+ERASMUS_AUTH_FILE="$authfile" go run ./cmd/erasmus login fake key >/dev/null
+ERASMUS_AUTH_FILE="$authfile" go run ./cmd/erasmus auth status | grep fake >/dev/null
+ERASMUS_AUTH_FILE="$authfile" go run ./cmd/erasmus logout fake >/dev/null
+ERASMUS_AUTH_FILE="$authfile" go run ./cmd/erasmus auth status | grep "no credentials" >/dev/null
+rm -f "$authfile"
+
+tmp="$(mktemp -d)"
+go build -o /tmp/erasmus-test-bin ./cmd/erasmus
+(
+  cd "$tmp"
+  /tmp/erasmus-test-bin run "write note.txt content hello" >/dev/null
+  test "$(cat note.txt)" = hello
+  /tmp/erasmus-test-bin run "edit note.txt hello bye" >/dev/null
+  test "$(cat note.txt)" = bye
+)
