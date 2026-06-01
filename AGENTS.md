@@ -14,11 +14,13 @@ This file is the project-level map for contributors and coding agents. More spec
 - `packages/session`: session interfaces plus `jsonl` and `memory` implementations.
 - `packages/prompt`, `packages/skill`, `packages/compact`: prompt resources, skill discovery, and compaction.
 - `packages/extension`: JSON-line extension protocol, subprocess host, tools, commands, and hooks.
+- `packages/extension/sdk`: thin Go helpers for authoring JSON-line extension subprocesses.
 - `packages/rpc`: JSON-lines RPC server around harness runtimes.
 - `packages/swarm`: background agent supervision and socket/stdio clients.
 - `packages/tui`: line-oriented and full-screen Bubble Tea TUI.
 - `packages/app`: application composition and frontend wiring. CLI handlers should delegate here when behavior belongs outside the CLI.
 - `examples/godom`: browser example module using godom.
+- `examples/extension-go`: minimal Go extension subprocess example using the extension SDK.
 
 ## Dependency Direction
 
