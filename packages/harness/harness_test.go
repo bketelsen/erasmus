@@ -133,6 +133,37 @@ func TestHarnessSetModelAndStreamUsesNewStreamForNextPrompt(t *testing.T) {
 	}
 }
 
+func TestHarnessPromptEventsIncludeErrorAndSettled(t *testing.T) {
+	ctx := context.Background()
+	stream := func(ctx context.Context, req provider.Request) (<-chan provider.Event, error) {
+		return streamEvents(provider.Error{Err: "provider failed"}), nil
+	}
+	h, err := harness.New(ctx, harness.Config{Session: memory.New("errors"), Stream: stream, Model: model.Model{Provider: "fake", ID: "test"}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	events, err := h.Prompt(ctx, "hi", harness.PromptOptions{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := h.Wait(ctx); err == nil || err.Error() != "provider failed" {
+		t.Fatalf("wait error = %v, want provider failed", err)
+	}
+	var got []event.Event
+	for ev := range events {
+		got = append(got, ev)
+	}
+	if len(got) < 2 {
+		t.Fatalf("events = %+v", got)
+	}
+	if _, ok := got[len(got)-2].(event.Error); !ok {
+		t.Fatalf("penultimate event = %T, want event.Error", got[len(got)-2])
+	}
+	if _, ok := got[len(got)-1].(event.Settled); !ok {
+		t.Fatalf("last event = %T, want event.Settled", got[len(got)-1])
+	}
+}
+
 func streamEvents(events ...provider.Event) <-chan provider.Event {
 	ch := make(chan provider.Event, len(events))
 	for _, ev := range events {

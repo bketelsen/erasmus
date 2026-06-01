@@ -44,7 +44,7 @@ func TestAgentPromptUpdatesStateAndPublishesEvents(t *testing.T) {
 	if got := st.Messages[1].Content[0].(message.Text).Text; got != "hello" {
 		t.Fatalf("assistant text = %q", got)
 	}
-	if len(events) == 0 || events[0] != "agent_start" || events[len(events)-1] != "agent_end" {
+	if len(events) < 2 || events[0] != "agent_start" || events[len(events)-2] != "agent_end" || events[len(events)-1] != "settled" {
 		t.Fatalf("events = %v", events)
 	}
 }
@@ -148,6 +148,48 @@ func TestAgentSteerQueuesBeforeNextToolContinuation(t *testing.T) {
 	}
 	if calls != 2 {
 		t.Fatalf("stream calls = %d, want 2", calls)
+	}
+}
+
+func TestAgentPublishesErrorAndSettledOnRunError(t *testing.T) {
+	stream := func(ctx context.Context, req provider.Request) (<-chan provider.Event, error) {
+		return streamEvents(provider.Error{Err: "provider failed"}), nil
+	}
+	a := agent.New(agent.Config{LoopConfig: loopConfig(stream)})
+
+	var events []event.Event
+	var settledStreaming bool
+	a.Subscribe(func(ev event.Event) {
+		events = append(events, ev)
+		if _, ok := ev.(event.Settled); ok {
+			settledStreaming = a.State().IsStreaming
+		}
+	})
+	if err := a.Prompt(context.Background(), "hi", nil); err != nil {
+		t.Fatal(err)
+	}
+	if err := a.Wait(context.Background()); err == nil || err.Error() != "provider failed" {
+		t.Fatalf("wait error = %v, want provider failed", err)
+	}
+	if len(events) < 2 {
+		t.Fatalf("events = %+v", events)
+	}
+	errEvent, ok := events[len(events)-2].(event.Error)
+	if !ok {
+		t.Fatalf("penultimate event = %T, want event.Error", events[len(events)-2])
+	}
+	if errEvent.Err != "provider failed" {
+		t.Fatalf("error event = %+v", errEvent)
+	}
+	settled, ok := events[len(events)-1].(event.Settled)
+	if !ok {
+		t.Fatalf("last event = %T, want event.Settled", events[len(events)-1])
+	}
+	if settled.Err != "provider failed" {
+		t.Fatalf("settled event = %+v", settled)
+	}
+	if settledStreaming {
+		t.Fatal("agent was still streaming when settled was published")
 	}
 }
 

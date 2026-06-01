@@ -27,6 +27,20 @@ type AgentEnd struct {
 
 func (AgentEnd) Type() string { return "agent_end" }
 
+// Error reports a runtime error.
+type Error struct {
+	Err string `json:"err,omitempty"`
+}
+
+func (Error) Type() string { return "error" }
+
+// Settled marks that an agent run has fully settled.
+type Settled struct {
+	Err string `json:"err,omitempty"`
+}
+
+func (Settled) Type() string { return "settled" }
+
 // TurnStart marks the beginning of a provider/tool turn.
 type TurnStart struct {
 	Step int `json:"step"`

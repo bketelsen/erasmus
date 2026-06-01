@@ -700,7 +700,7 @@ func (h *Harness) eventChan() (chan event.Event, func()) {
 	}
 	unsub = h.Subscribe(func(ev event.Event) {
 		ch <- ev
-		if ev.Type() == "agent_end" {
+		if ev.Type() == "settled" {
 			unsubscribe()
 			close(ch)
 		}

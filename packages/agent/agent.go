@@ -142,10 +142,16 @@ func (a *Agent) start(ctx context.Context, prompts []message.Message, cont bool)
 		if len(messages) > 0 {
 			a.state.Messages = copyMessages(messages)
 		}
+		errText := ""
 		if err != nil {
-			a.state.ErrorMessage = err.Error()
+			errText = err.Error()
+			a.state.ErrorMessage = errText
 		}
 		a.mu.Unlock()
+		if errText != "" {
+			_ = emit(event.Error{Err: errText})
+		}
+		_ = emit(event.Settled{Err: errText})
 		done <- err
 		close(done)
 	}()
@@ -295,6 +301,8 @@ func (a *Agent) applyEvent(ev event.Event) {
 		a.state.PendingToolCalls[e.ID] = message.ToolCall{ID: e.ID, Name: e.Name, Arguments: e.Args}
 	case event.ToolExecutionEnd:
 		delete(a.state.PendingToolCalls, e.ID)
+	case event.Error:
+		a.state.ErrorMessage = e.Err
 	}
 }
 
