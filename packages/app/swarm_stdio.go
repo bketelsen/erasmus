@@ -15,7 +15,9 @@ import (
 	"erasmus/packages/auth"
 	"erasmus/packages/config"
 	"erasmus/packages/harness"
+	"erasmus/packages/skill"
 	"erasmus/packages/swarm"
+	"erasmus/packages/tool"
 )
 
 type swarmStdioRequest struct {
@@ -84,9 +86,19 @@ func newSwarmController(ctx context.Context, cfg config.Config, store auth.Store
 	if cwd == "" {
 		cwd, _ = os.Getwd()
 	}
-	extraTools, extensionSkills, cleanupExtensions, err := StartConfiguredExtensions(ctx, cfg)
+	extensions, err := StartConfiguredExtensionSet(ctx, cfg)
 	if err != nil {
 		return nil, err
+	}
+	var extraTools tool.Registry
+	var extensionSkills []skill.Skill
+	var cleanupExtensions func()
+	if extensions != nil {
+		extraTools = extensions.Tools()
+		extensionSkills = extensions.Skills()
+		cleanupExtensions = extensions.Close
+	} else {
+		cleanupExtensions = func() {}
 	}
 	s, err := swarm.New(swarm.Config{EventLogDir: defaultSwarmEventLogDir(cwd), Factory: func(ctx context.Context, req swarm.SpawnRequest) (*harness.Harness, error) {
 		runtimeCfg := cfg
@@ -124,6 +136,12 @@ func newSwarmController(ctx context.Context, cfg config.Config, store auth.Store
 	if err != nil {
 		cleanupExtensions()
 		return nil, err
+	}
+	if extensions != nil {
+		if err := applyExtensionBackgroundActions(ctx, s, extensions.DrainHostActions()); err != nil {
+			cleanupExtensions()
+			return nil, err
+		}
 	}
 	return &swarmController{s: s, runtimes: runtimes, cleanupExtensions: cleanupExtensions, started: time.Now(), pid: os.Getpid(), cwd: cwd, provider: cfg.Provider, model: cfg.Model}, nil
 }

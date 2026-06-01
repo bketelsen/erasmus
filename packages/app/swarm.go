@@ -14,7 +14,9 @@ import (
 	"erasmus/packages/session"
 	"erasmus/packages/session/jsonl"
 	"erasmus/packages/session/memory"
+	"erasmus/packages/skill"
 	"erasmus/packages/swarm"
+	"erasmus/packages/tool"
 )
 
 // SwarmRunOptions configures a one-shot swarm run.
@@ -44,11 +46,19 @@ func RunSwarmConfigured(ctx context.Context, opts SwarmRunOptions, cfg config.Co
 	if opts.Subprocess {
 		return RunSwarmSubprocess(ctx, opts)
 	}
-	extraTools, extensionSkills, cleanupExtensions, err := StartConfiguredExtensions(ctx, cfg)
+	extensions, err := StartConfiguredExtensionSet(ctx, cfg)
 	if err != nil {
 		return err
 	}
-	defer cleanupExtensions()
+	if extensions != nil {
+		defer extensions.Close()
+	}
+	var extraTools tool.Registry
+	var extensionSkills []skill.Skill
+	if extensions != nil {
+		extraTools = extensions.Tools()
+		extensionSkills = extensions.Skills()
+	}
 	s, err := swarm.New(swarm.Config{
 		EventLogDir: opts.EventLogDir,
 		Factory: func(ctx context.Context, req swarm.SpawnRequest) (*harness.Harness, error) {
@@ -86,6 +96,11 @@ func RunSwarmConfigured(ctx context.Context, opts SwarmRunOptions, cfg config.Co
 	})
 	if err != nil {
 		return err
+	}
+	if extensions != nil {
+		if err := applyExtensionBackgroundActions(ctx, s, extensions.DrainHostActions()); err != nil {
+			return err
+		}
 	}
 	agent, err := s.Spawn(ctx, swarm.SpawnRequest{ID: "main", Task: opts.Task, CWD: cfg.CWD, Provider: cfg.Provider, Model: cfg.Model})
 	if err != nil {

@@ -59,6 +59,16 @@ type Extension struct {
 	Commands []Command
 }
 
+// BackgroundSpawnOptions describes a background agent spawn request.
+type BackgroundSpawnOptions struct {
+	ID           string `json:"id,omitempty"`
+	Task         string `json:"task"`
+	Provider     string `json:"provider,omitempty"`
+	Model        string `json:"model,omitempty"`
+	CWD          string `json:"cwd,omitempty"`
+	SessionScope string `json:"session_scope,omitempty"`
+}
+
 // Run starts an extension loop over stdin/stdout.
 func Run(ctx context.Context, ext Extension) error {
 	return RunWithIO(ctx, ext, os.Stdin, os.Stdout)
@@ -106,6 +116,29 @@ func SetResourcesAction(activeTools []string, skills []skill.Skill) proto.HostAc
 		Skills      []skill.Skill `json:"skills,omitempty"`
 	}{ActiveTools: append([]string(nil), activeTools...), Skills: append([]skill.Skill(nil), skills...)})
 	return proto.HostAction{Type: "set_resources", Data: data}
+}
+
+// BackgroundSpawnAction asks a swarm-capable host to spawn a background agent.
+func BackgroundSpawnAction(opts BackgroundSpawnOptions) proto.HostAction {
+	data, _ := json.Marshal(opts)
+	return proto.HostAction{Type: "background_spawn", Data: data}
+}
+
+// BackgroundSendAction asks a swarm-capable host to send text to a background agent.
+func BackgroundSendAction(id, text string) proto.HostAction {
+	data, _ := json.Marshal(struct {
+		ID   string `json:"id"`
+		Text string `json:"text"`
+	}{ID: id, Text: text})
+	return proto.HostAction{Type: "background_send", Data: data}
+}
+
+// BackgroundStopAction asks a swarm-capable host to stop a background agent.
+func BackgroundStopAction(id string) proto.HostAction {
+	data, _ := json.Marshal(struct {
+		ID string `json:"id"`
+	}{ID: id})
+	return proto.HostAction{Type: "background_stop", Data: data}
 }
 
 // SavePointAction asks the host to persist a checkpoint marker.

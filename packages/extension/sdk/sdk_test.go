@@ -188,6 +188,21 @@ func TestSetResourcesAction(t *testing.T) {
 	}
 }
 
+func TestBackgroundActions(t *testing.T) {
+	spawn := sdk.BackgroundSpawnAction(sdk.BackgroundSpawnOptions{ID: "agent-1", Task: "hello", SessionScope: "memory"})
+	if spawn.Type != "background_spawn" || !strings.Contains(string(spawn.Data), `"id":"agent-1"`) || !strings.Contains(string(spawn.Data), `"task":"hello"`) {
+		t.Fatalf("spawn action = %+v data=%s", spawn, spawn.Data)
+	}
+	send := sdk.BackgroundSendAction("agent-1", "next")
+	if send.Type != "background_send" || !strings.Contains(string(send.Data), `"text":"next"`) {
+		t.Fatalf("send action = %+v data=%s", send, send.Data)
+	}
+	stop := sdk.BackgroundStopAction("agent-1")
+	if stop.Type != "background_stop" || !strings.Contains(string(stop.Data), `"id":"agent-1"`) {
+		t.Fatalf("stop action = %+v data=%s", stop, stop.Data)
+	}
+}
+
 func TestSavePointAction(t *testing.T) {
 	action := sdk.SavePointAction("before-change", map[string]string{"path": "main.go"})
 	if action.Type != "save_point" {

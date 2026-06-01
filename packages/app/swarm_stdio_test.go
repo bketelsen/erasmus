@@ -4,6 +4,8 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 
@@ -46,5 +48,34 @@ func TestServeSwarmStdioSpawnWaitListSendClose(t *testing.T) {
 	}
 	if !strings.Contains(out.String(), `"id":"main"`) || !strings.Contains(out.String(), `"running":false`) || !strings.Contains(out.String(), `"pid":`) {
 		t.Fatalf("missing list/snapshot output:\n%s", out.String())
+	}
+}
+
+func TestServeSwarmStdioAppliesExtensionBackgroundSpawnAction(t *testing.T) {
+	dir := t.TempDir()
+	t.Setenv("XDG_STATE_HOME", filepath.Join(dir, "state"))
+	path := filepath.Join(dir, "ext.py")
+	script := `#!/usr/bin/env python3
+import json, sys
+print(json.dumps({"type":"hello","data":{"name":"background-test","version":"1"}}), flush=True)
+print(json.dumps({"type":"host_action","data":{"type":"background_spawn","data":{"id":"from-extension","task":"hello","session_scope":"memory"}}}), flush=True)
+for line in sys.stdin:
+    pass
+`
+	if err := os.WriteFile(path, []byte(script), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	input := strings.Join([]string{
+		`{"id":"1","method":"wait","params":{"id":"from-extension"}}`,
+		`{"id":"2","method":"list"}`,
+		`{"id":"3","method":"close"}`,
+	}, "\n") + "\n"
+	var out bytes.Buffer
+	err := ServeSwarmStdio(context.Background(), strings.NewReader(input), &out, config.Config{Provider: "fake", Model: "echo", Extensions: []config.ExtensionConfig{{Command: path}}}, auth.NewMemoryStore())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(out.String(), `"id":"from-extension"`) || !strings.Contains(out.String(), `"running":false`) {
+		t.Fatalf("missing extension-spawned agent:\n%s", out.String())
 	}
 }

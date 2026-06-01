@@ -36,6 +36,7 @@ The extension answers with matching result frames:
 {"type":"host_action","data":{"type":"set_active_tools","data":{"names":["read","bash"]}}}
 {"type":"host_action","data":{"type":"set_resources","data":{"active_tools":["read"],"skills":[{"name":"review","body":"Review carefully."}]}}}
 {"type":"host_action","data":{"type":"save_point","data":{"label":"before-change","data":{"source":"extension"}}}}
+{"type":"host_action","data":{"type":"background_spawn","data":{"id":"agent-1","task":"hello","session_scope":"memory"}}}
 {"type":"hook_result","id":"context-transform-1","data":{"id":"context-transform-1","messages":[{"role":"user","content":[{"text":"rewritten"}]}]}}
 {"type":"hook_result","id":"provider-request-1","data":{"id":"provider-request-1","deny":true,"error":"blocked by policy"}}
 ```
@@ -52,6 +53,7 @@ Supported host actions:
 - `set_active_tools`: asks the host to replace the active tool selection for subsequent runs or, during one-shot startup, before the prompt begins.
 - `set_resources`: asks the host to patch runtime resources. Currently supported fields are `active_tools` and `skills`; tool definitions are still supplied through startup registration.
 - `save_point`: asks the host to persist a checkpoint marker when the runtime supports durable sessions.
+- `background_spawn`, `background_send`, `background_stop`: ask a swarm-capable host to manage background agents. Non-swarm hosts may ignore these actions.
 
 Registered skills are merged with project/user skills before harness construction for configured extension frontends. Use `set_resources` for later skill replacement requests.
 
@@ -166,4 +168,4 @@ Startup errors and command/tool failures include the log path when available. In
 
 The protocol currently covers startup registration, tools, commands, command host actions, runtime event subscriptions, context transforms, provider request/response hooks, active-tool and skill resource mutation requests, diagnostics, and configured subprocess tools.
 
-The stable protocol does not yet expose dynamic tool-definition mutation, panels, or background lifecycle controls. Keep extensions headless and avoid depending on a specific frontend.
+The stable protocol does not yet expose dynamic tool-definition mutation or panels. Keep extensions headless and avoid depending on a specific frontend.
