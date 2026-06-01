@@ -77,6 +77,40 @@ func TestRunWithIORegistersAndDispatchesToolsAndCommands(t *testing.T) {
 	}
 }
 
+func TestRunWithIOSubscribesAndHandlesEvents(t *testing.T) {
+	runtimeEvent, err := proto.EncodeFrame("event", "settled", proto.Event{Type: "settled", Data: json.RawMessage(`{}`)})
+	if err != nil {
+		t.Fatal(err)
+	}
+	var output bytes.Buffer
+
+	err = sdk.RunWithIO(context.Background(), sdk.Extension{
+		Name:   "test-extension",
+		Events: []string{"settled"},
+		OnEvent: func(ctx context.Context, ev proto.Event) ([]proto.HostAction, error) {
+			if ev.Type != "settled" {
+				t.Fatalf("event type = %q", ev.Type)
+			}
+			return []proto.HostAction{sdk.PrintAction("settled")}, nil
+		},
+	}, strings.NewReader(encodeLines(t, runtimeEvent)), &output)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	frames := decodeLines(t, output.String())
+	if got, want := frameTypes(frames), []string{"hello", "subscribe", "host_action"}; !equalStrings(got, want) {
+		t.Fatalf("frame types = %v, want %v", got, want)
+	}
+	var action proto.HostAction
+	if err := proto.DecodeData(frames[2], &action); err != nil {
+		t.Fatal(err)
+	}
+	if action.Type != "print" || !strings.Contains(string(action.Data), "settled") {
+		t.Fatalf("action = %+v", action)
+	}
+}
+
 func TestRunWithIOReturnsProtocolErrorsAsFrames(t *testing.T) {
 	toolCall, err := proto.EncodeFrame("tool_call", "tool-1", proto.ToolCall{ID: "tool-1", Name: "fail", Args: json.RawMessage(`{}`)})
 	if err != nil {

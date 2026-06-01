@@ -21,25 +21,36 @@ func TestExampleExtensionRunsToolAndCommand(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	runtimeEvent, err := proto.EncodeFrame("event", "settled", proto.Event{Type: "settled", Data: json.RawMessage(`{}`)})
+	if err != nil {
+		t.Fatal(err)
+	}
 	var output bytes.Buffer
 
-	if err := sdk.RunWithIO(context.Background(), newExtension(), strings.NewReader(encodeFrames(t, toolCall, commandCall)), &output); err != nil {
+	if err := sdk.RunWithIO(context.Background(), newExtension(), strings.NewReader(encodeFrames(t, toolCall, commandCall, runtimeEvent)), &output); err != nil {
 		t.Fatal(err)
 	}
 
 	frames := decodeFrames(t, output.String())
-	if got, want := frameTypes(frames), []string{"hello", "register_tool", "register_command", "tool_result", "command_result"}; !equalStrings(got, want) {
+	if got, want := frameTypes(frames), []string{"hello", "register_tool", "register_command", "subscribe", "tool_result", "command_result", "host_action"}; !equalStrings(got, want) {
 		t.Fatalf("frame types = %v, want %v", got, want)
 	}
-	if !strings.Contains(string(frames[3].Data), `"text":"echo: hi"`) {
-		t.Fatalf("tool result data = %s", frames[3].Data)
+	if !strings.Contains(string(frames[4].Data), `"text":"echo: hi"`) {
+		t.Fatalf("tool result data = %s", frames[4].Data)
 	}
 	var commandResult proto.CommandResult
-	if err := proto.DecodeData(frames[4], &commandResult); err != nil {
+	if err := proto.DecodeData(frames[5], &commandResult); err != nil {
 		t.Fatal(err)
 	}
 	if len(commandResult.Actions) != 1 || commandResult.Actions[0].Type != "print" || !strings.Contains(string(commandResult.Actions[0].Data), "hello Erasmus") {
 		t.Fatalf("command result = %+v", commandResult)
+	}
+	var action proto.HostAction
+	if err := proto.DecodeData(frames[6], &action); err != nil {
+		t.Fatal(err)
+	}
+	if action.Type != "print" || !strings.Contains(string(action.Data), "go extension saw settled") {
+		t.Fatalf("event action = %+v", action)
 	}
 }
 

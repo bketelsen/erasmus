@@ -24,6 +24,9 @@ type ToolHandler func(context.Context, json.RawMessage) (ToolResult, error)
 // CommandHandler executes an extension command call.
 type CommandHandler func(context.Context, json.RawMessage) ([]proto.HostAction, error)
 
+// EventHandler handles runtime events forwarded by the host.
+type EventHandler func(context.Context, proto.Event) ([]proto.HostAction, error)
+
 // Tool describes a tool exposed by an extension subprocess.
 type Tool struct {
 	Name        string
@@ -43,6 +46,8 @@ type Command struct {
 type Extension struct {
 	Name     string
 	Version  string
+	Events   []string
+	OnEvent  EventHandler
 	Tools    []Tool
 	Commands []Command
 }
@@ -105,6 +110,11 @@ func (r *runner) writeStartup() error {
 			return err
 		}
 	}
+	if len(r.ext.Events) > 0 {
+		if err := r.write("subscribe", "", proto.Subscribe{Events: append([]string(nil), r.ext.Events...)}); err != nil {
+			return err
+		}
+	}
 	return nil
 }
 
@@ -148,6 +158,15 @@ func (r *runner) handle(frame proto.Frame) error {
 			call.ID = frame.ID
 		}
 		return r.handleCommandCall(call)
+	case "event":
+		var ev proto.Event
+		if err := proto.DecodeData(frame, &ev); err != nil {
+			return err
+		}
+		if ev.Type == "" {
+			ev.Type = frame.ID
+		}
+		return r.handleEvent(ev)
 	default:
 		return nil
 	}
@@ -175,6 +194,22 @@ func (r *runner) handleCommandCall(call proto.CommandCall) error {
 		return r.write("command_result", call.ID, proto.CommandResult{ID: call.ID, Error: err.Error()})
 	}
 	return r.write("command_result", call.ID, proto.CommandResult{ID: call.ID, Actions: actions})
+}
+
+func (r *runner) handleEvent(ev proto.Event) error {
+	if r.ext.OnEvent == nil {
+		return nil
+	}
+	actions, err := r.ext.OnEvent(r.ctx, ev)
+	if err != nil {
+		return err
+	}
+	for _, action := range actions {
+		if err := r.write("host_action", "", action); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 func (r *runner) toolHandler(name string) ToolHandler {

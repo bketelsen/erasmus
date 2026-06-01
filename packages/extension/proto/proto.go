@@ -4,6 +4,7 @@ package proto
 import (
 	"encoding/json"
 
+	"erasmus/packages/event"
 	"erasmus/packages/tool"
 )
 
@@ -31,6 +32,18 @@ type RegisterTool struct {
 type RegisterCommand struct {
 	Name        string `json:"name"`
 	Description string `json:"description,omitempty"`
+}
+
+// Subscribe requests runtime events from the host.
+type Subscribe struct {
+	Events []string `json:"events,omitempty"`
+}
+
+// Event carries a runtime event from the host to an extension.
+type Event struct {
+	Type  string          `json:"type"`
+	Event event.Event     `json:"-"`
+	Data  json.RawMessage `json:"data,omitempty"`
 }
 
 // CommandCall requests extension command execution.

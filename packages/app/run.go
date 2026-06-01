@@ -56,11 +56,17 @@ func RunConfigured(ctx context.Context, opts RunOptions, cfg config.Config, stor
 		return err
 	}
 	defer sess.Close(ctx)
-	extraTools, cleanupExtensions, err := StartConfiguredExtensions(ctx, cfg)
+	extensions, err := StartConfiguredExtensionSet(ctx, cfg)
 	if err != nil {
 		return err
 	}
-	defer cleanupExtensions()
+	if extensions != nil {
+		defer extensions.Close()
+	}
+	var extraTools tool.Registry
+	if extensions != nil {
+		extraTools = extensions.Tools()
+	}
 	resolved, err := ResolveHarnessConfig(ctx, ResolveOptions{Config: cfg, Session: sess, Auth: store, Skills: skills, ExtraTools: extraTools})
 	if err != nil {
 		return err
@@ -74,6 +80,11 @@ func RunConfigured(ctx context.Context, opts RunOptions, cfg config.Config, stor
 		return err
 	}
 	for ev := range events {
+		if extensions != nil {
+			if err := extensions.PublishEvent(ctx, ev); err != nil {
+				return err
+			}
+		}
 		renderRunEvent(out, ev, opts.ShowTools)
 	}
 	if err := h.Wait(ctx); err != nil {

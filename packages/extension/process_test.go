@@ -9,6 +9,7 @@ import (
 	"testing"
 	"time"
 
+	"erasmus/packages/event"
 	"erasmus/packages/extension"
 	"erasmus/packages/message"
 )
@@ -47,4 +48,47 @@ done
 	if got := res.Content[0].(message.Text).Text; got != "hello from extension" {
 		t.Fatalf("got %q", got)
 	}
+}
+
+func TestProcessForwardsSubscribedRuntimeEvents(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("shell script test")
+	}
+	path := filepath.Join(t.TempDir(), "ext.sh")
+	script := `#!/usr/bin/env bash
+printf '%s\n' '{"type":"hello","data":{"name":"event-test","version":"1"}}'
+printf '%s\n' '{"type":"subscribe","data":{"events":["settled"]}}'
+while IFS= read -r line; do
+  case "$line" in
+    *'"type":"event"'*settled*)
+      printf '%s\n' '{"type":"host_action","data":{"type":"print","data":{"text":"saw settled"}}}'
+      ;;
+  esac
+done
+`
+	if err := os.WriteFile(path, []byte(script), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	proc, err := extension.StartProcess(ctx, path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer proc.Close()
+
+	if err := proc.PublishEvent(ctx, event.Settled{}); err != nil {
+		t.Fatal(err)
+	}
+	deadline := time.Now().Add(time.Second)
+	for time.Now().Before(deadline) {
+		actions := proc.Manager().DrainHostActions()
+		for _, action := range actions {
+			if action.Type == "print" && string(action.Data) == `{"text":"saw settled"}` {
+				return
+			}
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+	t.Fatal("extension did not observe settled event")
 }

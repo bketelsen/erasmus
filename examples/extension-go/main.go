@@ -20,6 +20,13 @@ func newExtension() sdk.Extension {
 	return sdk.Extension{
 		Name:    "go-example",
 		Version: "v0",
+		Events:  []string{"settled"},
+		OnEvent: func(ctx context.Context, ev proto.Event) ([]proto.HostAction, error) {
+			if ev.Type == "settled" {
+				return []proto.HostAction{sdk.PrintAction("go extension saw settled")}, nil
+			}
+			return nil, nil
+		},
 		Tools: []sdk.Tool{{
 			Name:        "echo_go",
 			Description: "Echo text from a Go SDK extension.",

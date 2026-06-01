@@ -12,6 +12,7 @@ Every stdout line from an extension must be one JSON frame:
 {"type":"hello","data":{"name":"demo","version":"v0"}}
 {"type":"register_tool","data":{"name":"echo","description":"Echo text"}}
 {"type":"register_command","data":{"name":"hello","description":"Print a greeting"}}
+{"type":"subscribe","data":{"events":["settled","save_point"]}}
 ```
 
 The host calls tools and commands by writing frames to the extension stdin:
@@ -19,6 +20,7 @@ The host calls tools and commands by writing frames to the extension stdin:
 ```json
 {"type":"tool_call","id":"echo-1","data":{"id":"echo-1","name":"echo","args":{"text":"hi"}}}
 {"type":"command_call","id":"hello-1","data":{"id":"hello-1","name":"hello","input":{"text":"Ada"}}}
+{"type":"event","id":"settled","data":{"type":"settled","data":{}}}
 ```
 
 The extension answers with matching result frames:
@@ -26,9 +28,12 @@ The extension answers with matching result frames:
 ```json
 {"type":"tool_result","id":"echo-1","data":{"id":"echo-1","result":{"content":[{"text":"hi"}]}}}
 {"type":"command_result","id":"hello-1","data":{"id":"hello-1","actions":[{"type":"print","data":{"text":"hello Ada"}}]}}
+{"type":"host_action","data":{"type":"print","data":{"text":"saw settled"}}}
 ```
 
 Tool result `content` uses Erasmus canonical message content. Text parts are encoded as `{"text":"..."}`.
+
+`subscribe` lets an extension request runtime events by event type. Use `"*"` to request every forwarded event. Event delivery is best-effort and currently one-way; extensions should not block host progress waiting for event acknowledgement.
 
 ## Raw Example
 
@@ -61,12 +66,17 @@ import (
 	"encoding/json"
 	"log"
 
+	"erasmus/packages/extension/proto"
 	"erasmus/packages/extension/sdk"
 )
 
 func main() {
 	err := sdk.Run(context.Background(), sdk.Extension{
 		Name: "go-demo",
+		Events: []string{"settled"},
+		OnEvent: func(ctx context.Context, ev proto.Event) ([]proto.HostAction, error) {
+			return []proto.HostAction{sdk.PrintAction("saw " + ev.Type)}, nil
+		},
 		Tools: []sdk.Tool{{
 			Name:        "echo_go",
 			Description: "Echo text",
@@ -124,6 +134,6 @@ Startup errors and command/tool failures include the log path when available. In
 
 ## Current Gaps
 
-The protocol currently covers startup registration, tools, commands, command host actions, diagnostics, and configured subprocess tools.
+The protocol currently covers startup registration, tools, commands, command host actions, runtime event subscriptions, diagnostics, and configured subprocess tools.
 
 The stable protocol does not yet expose provider payload hooks, context transforms, save points, resource mutation requests, panels, skills, or background lifecycle controls. Keep extensions headless and avoid depending on a specific frontend.

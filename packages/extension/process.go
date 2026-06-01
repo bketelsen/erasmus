@@ -10,6 +10,7 @@ import (
 	"sync"
 	"time"
 
+	"erasmus/packages/event"
 	"erasmus/packages/extension/proto"
 	"erasmus/packages/message"
 	"erasmus/packages/tool"
@@ -25,6 +26,7 @@ type Process struct {
 	mu       sync.Mutex
 	pendingT map[string]chan proto.ToolResult
 	pendingC map[string]chan proto.CommandResult
+	subs     map[string]bool
 	logs     *ringLog
 	writeMu  sync.Mutex
 	done     chan error
@@ -59,7 +61,7 @@ func StartProcessWithOptions(ctx context.Context, command string, opts ProcessOp
 	if err != nil {
 		return nil, err
 	}
-	p := &Process{cmd: cmd, stdin: stdin, frames: make(chan proto.Frame, 32), pendingT: map[string]chan proto.ToolResult{}, pendingC: map[string]chan proto.CommandResult{}, logs: logs, done: make(chan error, 1)}
+	p := &Process{cmd: cmd, stdin: stdin, frames: make(chan proto.Frame, 32), pendingT: map[string]chan proto.ToolResult{}, pendingC: map[string]chan proto.CommandResult{}, subs: map[string]bool{}, logs: logs, done: make(chan error, 1)}
 	p.manager = NewManager(p)
 	if err := cmd.Start(); err != nil {
 		_ = p.logs.Close()
@@ -104,6 +106,10 @@ func (p *Process) Close() error {
 	if p.stdin != nil {
 		_ = p.stdin.Close()
 	}
+	select {
+	case <-p.done:
+	case <-time.After(200 * time.Millisecond):
+	}
 	if p.cmd != nil && p.cmd.Process != nil {
 		_ = p.cmd.Process.Kill()
 	}
@@ -115,6 +121,28 @@ func (p *Process) Close() error {
 		return p.logs.Close()
 	}
 	return nil
+}
+
+// PublishEvent forwards a runtime event to the subprocess when subscribed.
+func (p *Process) PublishEvent(ctx context.Context, ev event.Event) error {
+	if p == nil || ev == nil {
+		return nil
+	}
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	typ := ev.Type()
+	p.mu.Lock()
+	subscribed := p.subs["*"] || p.subs[typ]
+	p.mu.Unlock()
+	if !subscribed {
+		return nil
+	}
+	data, err := json.Marshal(ev)
+	if err != nil {
+		return err
+	}
+	return p.write("event", typ, proto.Event{Type: typ, Data: data})
 }
 
 // CallTool implements Caller.
@@ -259,6 +287,18 @@ func (p *Process) handle(frame proto.Frame) error {
 			return err
 		}
 		p.manager.RegisterCommand(reg, p)
+	case "subscribe":
+		var sub proto.Subscribe
+		if err := proto.DecodeData(frame, &sub); err != nil {
+			return err
+		}
+		p.mu.Lock()
+		for _, typ := range sub.Events {
+			if typ != "" {
+				p.subs[typ] = true
+			}
+		}
+		p.mu.Unlock()
 	case "tool_result":
 		res, err := decodeProcessToolResult(frame)
 		if err != nil {

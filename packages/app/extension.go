@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"erasmus/packages/config"
+	"erasmus/packages/event"
 	"erasmus/packages/extension"
 	"erasmus/packages/tool"
 )
@@ -196,6 +197,19 @@ func (e *ConfiguredExtensions) FirstLogPath() string {
 		}
 	}
 	return ""
+}
+
+// PublishEvent forwards a runtime event to all configured extension subprocesses.
+func (e *ConfiguredExtensions) PublishEvent(ctx context.Context, ev event.Event) error {
+	if e == nil || ev == nil {
+		return nil
+	}
+	for _, proc := range e.procs {
+		if err := proc.PublishEvent(ctx, ev); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 // StartConfiguredExtensionSet starts configured extension subprocesses.
