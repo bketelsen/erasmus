@@ -217,6 +217,31 @@ func (a *App) handleCommand(ctx context.Context, out io.Writer, line string) (bo
 	return false, nil
 }
 
+type slashCommand struct {
+	Name        string
+	Usage       string
+	Description string
+}
+
+func slashCommands() []slashCommand {
+	return []slashCommand{
+		{Name: "/help", Usage: "/help", Description: "show command help"},
+		{Name: "/status", Usage: "/status", Description: "show runtime status"},
+		{Name: "/state", Usage: "/state", Description: "show runtime status"},
+		{Name: "/model", Usage: "/model", Description: "show model and reasoning"},
+		{Name: "/messages", Usage: "/messages [count]", Description: "show recent transcript"},
+		{Name: "/transcript", Usage: "/transcript [count]", Description: "show recent transcript"},
+		{Name: "/sessions", Usage: "/sessions [dir]", Description: "list durable JSONL sessions"},
+		{Name: "/open", Usage: "/open <path>", Description: "switch to a durable JSONL session"},
+		{Name: "/tree", Usage: "/tree", Description: "show session tree"},
+		{Name: "/move", Usage: "/move <id> [summary]", Description: "move to tree entry"},
+		{Name: "/branch", Usage: "/branch <id>", Description: "create branch session at entry"},
+		{Name: "/compact", Usage: "/compact", Description: "compact transcript"},
+		{Name: "/quit", Usage: "/quit", Description: "exit"},
+		{Name: "/exit", Usage: "/exit", Description: "exit"},
+	}
+}
+
 func (a *App) renderSessions(ctx context.Context, out io.Writer, dir string) error {
 	if a.ListSessions == nil {
 		return fmt.Errorf("session listing is not configured")
@@ -259,17 +284,9 @@ func (a *App) openSession(ctx context.Context, out io.Writer, path string) error
 
 func renderHelp(out io.Writer) {
 	fmt.Fprintln(out, "commands:")
-	fmt.Fprintln(out, "  /help                 show this help")
-	fmt.Fprintln(out, "  /status, /state       show runtime status")
-	fmt.Fprintln(out, "  /model                show model and reasoning")
-	fmt.Fprintln(out, "  /messages [count]    show recent transcript")
-	fmt.Fprintln(out, "  /sessions [dir]      list durable JSONL sessions")
-	fmt.Fprintln(out, "  /open <path>         switch to a durable JSONL session")
-	fmt.Fprintln(out, "  /tree                 show session tree")
-	fmt.Fprintln(out, "  /move <id> [summary]  move to tree entry")
-	fmt.Fprintln(out, "  /branch <id>          create branch session at entry")
-	fmt.Fprintln(out, "  /compact              compact transcript")
-	fmt.Fprintln(out, "  /quit, /exit          exit")
+	for _, cmd := range slashCommands() {
+		fmt.Fprintf(out, "  %-22s %s\n", cmd.Usage, cmd.Description)
+	}
 }
 
 func renderState(ctx context.Context, out io.Writer, h *harness.Harness) {

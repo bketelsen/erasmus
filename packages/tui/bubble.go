@@ -113,10 +113,13 @@ type bubbleModel struct {
 	swarmAttached      bool
 	swarmAttachTickID  int
 
-	searchActive  bool
-	searchQuery   string
-	searchMatches []int
-	searchIndex   int
+	searchActive              bool
+	searchQuery               string
+	searchMatches             []int
+	searchIndex               int
+	commandPopup              bool
+	commandSuggestions        []slashCommand
+	selectedCommandSuggestion int
 }
 
 type bubbleTheme struct {
@@ -309,6 +312,9 @@ func (m bubbleModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m.updateHelpDialog(x)
 		}
 		if updated, cmd, ok := m.handleViewportKey(x); ok {
+			return updated, cmd
+		}
+		if updated, cmd, ok := m.handleCommandPopupKey(x); ok {
 			return updated, cmd
 		}
 		switch x.String() {
@@ -541,6 +547,7 @@ func (m bubbleModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	}
 	var cmd tea.Cmd
 	m.input, cmd = m.input.Update(msg)
+	m.updateCommandSuggestions()
 	return m, cmd
 }
 
@@ -553,15 +560,19 @@ func (m bubbleModel) View() tea.View {
 	header := m.headerView()
 	inputTitle := m.theme.Help.Render(m.inputTitle())
 	inputView := m.theme.Input.Width(max(1, m.width-2)).Render(m.input.View())
+	commandPopup := m.commandSuggestionView()
 	dialog := m.activeDialogView()
-	reserved := lipgloss.Height(header) + lipgloss.Height(inputTitle) + lipgloss.Height(inputView) + lipgloss.Height(dialog) + m.theme.Viewport.GetVerticalFrameSize()
+	reserved := lipgloss.Height(header) + lipgloss.Height(inputTitle) + lipgloss.Height(commandPopup) + lipgloss.Height(inputView) + lipgloss.Height(dialog) + m.theme.Viewport.GetVerticalFrameSize()
 	m.viewport.SetHeight(max(1, m.height-reserved))
 	body := lipgloss.JoinVertical(lipgloss.Left,
 		header,
 		m.theme.Viewport.Width(max(1, m.width-2)).Render(m.viewport.View()),
 		inputTitle,
-		inputView,
 	)
+	if commandPopup != "" {
+		body = lipgloss.JoinVertical(lipgloss.Left, body, commandPopup)
+	}
+	body = lipgloss.JoinVertical(lipgloss.Left, body, inputView)
 	if dialog != "" {
 		body = lipgloss.JoinVertical(lipgloss.Left, body, dialog)
 	}
@@ -692,6 +703,7 @@ func (m *bubbleModel) submit() (bubbleModel, tea.Cmd) {
 		return *m, nil
 	}
 	m.input.Reset()
+	m.clearCommandSuggestions()
 	if strings.HasPrefix(text, "/") {
 		m.running = true
 		m.status = "command"
@@ -832,15 +844,108 @@ func (m bubbleModel) writeCurrentModeHelp(b *strings.Builder) {
 	default:
 		b.WriteString("  type prompt   compose in input box\n")
 		b.WriteString("  ctrl+s        submit prompt\n")
-		b.WriteString("  /help         command help\n")
-		b.WriteString("  /status       runtime status\n")
-		b.WriteString("  /model        current model\n")
-		b.WriteString("  /messages     recent transcript\n")
-		b.WriteString("  /sessions     list sessions\n")
-		b.WriteString("  /tree         session tree\n")
-		b.WriteString("  /compact      compact transcript\n")
-		b.WriteString("  /quit         exit\n\n")
+		b.WriteString("  /             show command suggestions\n")
+		for _, cmd := range slashCommands() {
+			fmt.Fprintf(b, "  %-13s %s\n", cmd.Usage, cmd.Description)
+		}
+		b.WriteString("\n")
 	}
+}
+
+func (m bubbleModel) handleCommandPopupKey(key tea.KeyPressMsg) (bubbleModel, tea.Cmd, bool) {
+	if !m.commandPopup {
+		return m, nil, false
+	}
+	switch key.String() {
+	case "tab", "enter":
+		m.acceptCommandSuggestion()
+		return m, nil, true
+	case "down":
+		m.selectedCommandSuggestion = (m.selectedCommandSuggestion + 1) % len(m.commandSuggestions)
+		return m, nil, true
+	case "up":
+		m.selectedCommandSuggestion--
+		if m.selectedCommandSuggestion < 0 {
+			m.selectedCommandSuggestion = len(m.commandSuggestions) - 1
+		}
+		return m, nil, true
+	case "esc":
+		m.clearCommandSuggestions()
+		return m, nil, true
+	}
+	return m, nil, false
+}
+
+func (m *bubbleModel) updateCommandSuggestions() {
+	value := m.input.Value()
+	if !strings.HasPrefix(value, "/") || strings.ContainsAny(value, " \t\r\n") {
+		m.clearCommandSuggestions()
+		return
+	}
+	suggestions := make([]slashCommand, 0, len(slashCommands()))
+	for _, cmd := range slashCommands() {
+		if strings.HasPrefix(cmd.Name, value) {
+			suggestions = append(suggestions, cmd)
+		}
+	}
+	if len(suggestions) == 0 {
+		m.clearCommandSuggestions()
+		return
+	}
+	m.commandPopup = true
+	m.commandSuggestions = suggestions
+	if m.selectedCommandSuggestion >= len(suggestions) {
+		m.selectedCommandSuggestion = len(suggestions) - 1
+	}
+	if m.selectedCommandSuggestion < 0 {
+		m.selectedCommandSuggestion = 0
+	}
+}
+
+func (m *bubbleModel) clearCommandSuggestions() {
+	m.commandPopup = false
+	m.commandSuggestions = nil
+	m.selectedCommandSuggestion = 0
+}
+
+func (m *bubbleModel) acceptCommandSuggestion() {
+	if len(m.commandSuggestions) == 0 {
+		m.clearCommandSuggestions()
+		return
+	}
+	selected := m.commandSuggestions[m.selectedCommandSuggestion]
+	m.input.SetValue(selected.Name + " ")
+	m.input.CursorEnd()
+	m.clearCommandSuggestions()
+}
+
+func (m bubbleModel) commandSuggestionView() string {
+	if !m.commandPopup || len(m.commandSuggestions) == 0 {
+		return ""
+	}
+	limit := min(6, len(m.commandSuggestions))
+	lines := make([]string, 0, limit+1)
+	lines = append(lines, "Commands")
+	maxLineWidth := max(20, m.width-10)
+	for i := 0; i < limit; i++ {
+		cmd := m.commandSuggestions[i]
+		line := fmt.Sprintf("%-22s %s", cmd.Usage, cmd.Description)
+		if len(line) > maxLineWidth {
+			line = line[:max(0, maxLineWidth-3)] + "..."
+		}
+		if i == m.selectedCommandSuggestion {
+			line = m.theme.Selected.Render(line)
+		}
+		lines = append(lines, line)
+	}
+	if len(m.commandSuggestions) > limit {
+		lines = append(lines, fmt.Sprintf("+%d more", len(m.commandSuggestions)-limit))
+	}
+	maxHeight := 5
+	if m.height >= 24 {
+		maxHeight = 8
+	}
+	return m.theme.Dialog.Width(max(1, m.width-2)).MaxHeight(maxHeight).Render(strings.Join(lines, "\n"))
 }
 
 func (m bubbleModel) writeSwarmHelp(b *strings.Builder) {

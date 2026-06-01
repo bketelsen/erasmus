@@ -249,6 +249,70 @@ func TestSlashHelpCommandStillRunsFullScreen(t *testing.T) {
 	}
 }
 
+func TestSlashCommandSuggestionsFilterAndInsert(t *testing.T) {
+	ctx := context.Background()
+	h, err := harness.New(ctx, harness.Config{
+		Session: memory.New("tui-command-suggest-test"),
+		Model:   model.Model{Provider: "fake", ID: "echo"},
+		Stream: func(ctx context.Context, req provider.Request) (<-chan provider.Event, error) {
+			return streamText("ok"), nil
+		},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	m := newBubbleModel(ctx, &App{Harness: h})
+
+	for _, r := range "/mo" {
+		updated, _ := m.Update(tea.KeyPressMsg(tea.Key{Text: string(r), Code: r}))
+		m = updated.(bubbleModel)
+	}
+	if !m.commandPopup || len(m.commandSuggestions) != 2 {
+		t.Fatalf("popup=%v suggestions=%v", m.commandPopup, m.commandSuggestions)
+	}
+	if got := m.commandSuggestions[m.selectedCommandSuggestion].Name; got != "/model" {
+		t.Fatalf("selected suggestion = %q, want /model", got)
+	}
+	updated, _ := m.Update(tea.KeyPressMsg(tea.Key{Code: tea.KeyTab}))
+	m = updated.(bubbleModel)
+	if got := m.input.Value(); got != "/model " {
+		t.Fatalf("input after completion = %q, want /model ", got)
+	}
+	if m.commandPopup {
+		t.Fatal("popup remained open after completion")
+	}
+}
+
+func TestSlashCommandSuggestionsNavigate(t *testing.T) {
+	ctx := context.Background()
+	h, err := harness.New(ctx, harness.Config{
+		Session: memory.New("tui-command-navigate-test"),
+		Model:   model.Model{Provider: "fake", ID: "echo"},
+		Stream: func(ctx context.Context, req provider.Request) (<-chan provider.Event, error) {
+			return streamText("ok"), nil
+		},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	m := newBubbleModel(ctx, &App{Harness: h})
+	updated, _ := m.Update(tea.KeyPressMsg(tea.Key{Text: "/", Code: '/'}))
+	m = updated.(bubbleModel)
+	if !m.commandPopup || len(m.commandSuggestions) == 0 {
+		t.Fatalf("popup=%v suggestions=%v", m.commandPopup, m.commandSuggestions)
+	}
+	updated, _ = m.Update(tea.KeyPressMsg(tea.Key{Code: tea.KeyDown}))
+	m = updated.(bubbleModel)
+	if m.selectedCommandSuggestion != 1 {
+		t.Fatalf("selected suggestion = %d, want 1", m.selectedCommandSuggestion)
+	}
+	updated, _ = m.Update(tea.KeyPressMsg(tea.Key{Code: tea.KeyEnter}))
+	m = updated.(bubbleModel)
+	if got, want := m.input.Value(), slashCommands()[1].Name+" "; got != want {
+		t.Fatalf("input after enter = %q, want %q", got, want)
+	}
+}
+
 func TestBubbleLayoutFitsWindowHeight(t *testing.T) {
 	ctx := context.Background()
 	h, err := harness.New(ctx, harness.Config{
@@ -272,6 +336,28 @@ func TestBubbleLayoutFitsWindowHeight(t *testing.T) {
 		if got, want := lipgloss.Height(view.Content), size.Height; got > want {
 			t.Fatalf("%dx%d view height = %d, want <= %d", size.Width, size.Height, got, want)
 		}
+	}
+}
+
+func TestBubbleCommandPopupLayoutFitsWindowHeight(t *testing.T) {
+	ctx := context.Background()
+	h, err := harness.New(ctx, harness.Config{
+		Session: memory.New("tui-command-popup-layout-test"),
+		Model:   model.Model{Provider: "fake", ID: "echo"},
+		Stream: func(ctx context.Context, req provider.Request) (<-chan provider.Event, error) {
+			return streamText("ok"), nil
+		},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	updated, _ := newBubbleModel(ctx, &App{Harness: h}).Update(tea.WindowSizeMsg{Width: 80, Height: 18})
+	m := updated.(bubbleModel)
+	updated, _ = m.Update(tea.KeyPressMsg(tea.Key{Text: "/", Code: '/'}))
+	m = updated.(bubbleModel)
+	view := m.View()
+	if got, want := lipgloss.Height(view.Content), 18; got > want {
+		t.Fatalf("command popup view height = %d, want <= %d", got, want)
 	}
 }
 
