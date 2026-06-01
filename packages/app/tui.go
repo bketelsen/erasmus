@@ -8,6 +8,7 @@ import (
 
 	"erasmus/packages/auth"
 	"erasmus/packages/config"
+	"erasmus/packages/event"
 	"erasmus/packages/harness"
 	"erasmus/packages/model"
 	"erasmus/packages/session"
@@ -15,6 +16,7 @@ import (
 	"erasmus/packages/session/memory"
 	"erasmus/packages/skill"
 	"erasmus/packages/swarm"
+	"erasmus/packages/tool"
 	"erasmus/packages/tui"
 )
 
@@ -134,13 +136,21 @@ func buildTUIHarness(ctx context.Context, cfg config.Config, store auth.Store, s
 	if err != nil {
 		return nil, nil, err
 	}
-	extraTools, extensionSkills, cleanupExtensions, err := StartConfiguredExtensions(ctx, cfg)
+	extensions, err := StartConfiguredExtensionSet(ctx, cfg)
 	if err != nil {
 		_ = sess.Close(ctx)
 		return nil, nil, err
 	}
+	var extraTools tool.Registry
+	var extensionSkills []skill.Skill
+	if extensions != nil {
+		extraTools = extensions.Tools()
+		extensionSkills = extensions.Skills()
+	}
 	cleanup := func() {
-		cleanupExtensions()
+		if extensions != nil {
+			extensions.Close()
+		}
 		_ = sess.Close(ctx)
 	}
 	resolved, err := ResolveHarnessConfig(ctx, ResolveOptions{
@@ -158,6 +168,20 @@ func buildTUIHarness(ctx context.Context, cfg config.Config, store auth.Store, s
 	if err != nil {
 		cleanup()
 		return nil, nil, err
+	}
+	if extensions != nil {
+		if err := applyExtensionHostActions(ctx, h, extensions.DrainHostActions()); err != nil {
+			cleanup()
+			return nil, nil, err
+		}
+		unsubscribe := h.Subscribe(func(ev event.Event) {
+			_ = forwardExtensionRuntimeEvent(context.Background(), h, extensions, ev)
+		})
+		priorCleanup := cleanup
+		cleanup = func() {
+			unsubscribe()
+			priorCleanup()
+		}
 	}
 	return h, cleanup, nil
 }
