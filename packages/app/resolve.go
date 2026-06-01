@@ -144,6 +144,13 @@ func resolveStream(ctx context.Context, m model.Model, store auth.Store) (provid
 				return nil, err
 			}
 			return client.Stream, nil
+		case githubCopilotUsesAnthropicMessages(m.ID):
+			baseURL := auth.GitHubCopilotBaseURLFromToken(cred.OAuth.AccessToken)
+			client, err := githubcopilot.NewAnthropicMessages(githubcopilot.Config{AccessToken: cred.OAuth.AccessToken, BaseURL: baseURL})
+			if err != nil {
+				return nil, err
+			}
+			return client.Stream, nil
 		default:
 			return nil, fmt.Errorf("github-copilot model %q is not wired yet", m.ID)
 		}
@@ -159,6 +166,10 @@ func githubCopilotUsesChatCompletions(modelID string) bool {
 
 func githubCopilotUsesResponses(modelID string) bool {
 	return strings.HasPrefix(strings.ToLower(modelID), "gpt-5")
+}
+
+func githubCopilotUsesAnthropicMessages(modelID string) bool {
+	return strings.HasPrefix(strings.ToLower(modelID), "claude-")
 }
 
 func refreshOpenAICodexCredential(ctx context.Context, store auth.Store, cred auth.Credential) (auth.Credential, error) {

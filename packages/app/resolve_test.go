@@ -133,6 +133,24 @@ func TestResolveHarnessConfigBuildsGitHubCopilotResponsesStreamFromOAuth(t *test
 	}
 }
 
+func TestResolveHarnessConfigBuildsGitHubCopilotClaudeStreamFromOAuth(t *testing.T) {
+	store := auth.NewMemoryStore()
+	if err := store.Set(context.Background(), auth.Credential{Provider: "github-copilot", OAuth: &auth.OAuthToken{AccessToken: "tok;proxy-ep=proxy.individual.githubcopilot.com;", RefreshToken: "github-access"}}); err != nil {
+		t.Fatal(err)
+	}
+	resolved, err := app.ResolveHarnessConfig(context.Background(), app.ResolveOptions{
+		Config:  config.Config{Provider: "github-copilot", Model: "claude-sonnet-4.5"},
+		Session: memory.New("test"),
+		Auth:    store,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if resolved.Model.Provider != "github-copilot" || resolved.Harness.Stream == nil {
+		t.Fatalf("unexpected resolved: %+v", resolved.Model)
+	}
+}
+
 func TestResolveHarnessConfigAllowsExplicitProviderModelOutsideStaticCatalog(t *testing.T) {
 	resolved, err := app.ResolveHarnessConfig(context.Background(), app.ResolveOptions{
 		Config:  config.Config{Provider: "openai-codex", Model: "future-codex-model"},
