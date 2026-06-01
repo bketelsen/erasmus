@@ -135,6 +135,16 @@ func (p *Process) HookSubscribed(hook string) bool {
 	return p.hooks["*"] || p.hooks[hook]
 }
 
+// EventSubscribed reports whether the subprocess subscribed to an event type.
+func (p *Process) EventSubscribed(typ string) bool {
+	if p == nil {
+		return false
+	}
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	return p.subs["*"] || p.subs[typ]
+}
+
 // CallHook calls a subscribed extension runtime hook.
 func (p *Process) CallHook(ctx context.Context, call proto.HookCall) (proto.HookResult, error) {
 	if !p.HookSubscribed(call.Hook) {

@@ -43,7 +43,7 @@ The extension answers with matching result frames:
 
 Tool result `content` uses Erasmus canonical message content. Text parts are encoded as `{"text":"..."}`.
 
-`subscribe` lets an extension request runtime events by event type. Use `"*"` to request every forwarded event. Event delivery is best-effort and currently one-way; extensions should not block host progress waiting for event acknowledgement.
+`subscribe` lets an extension request runtime events by event type. Use `"*"` to request every forwarded event. One-shot `run` and RPC runtimes forward subscribed events and apply host actions emitted by event handlers. Event delivery is best-effort and currently one-way; extensions should not block host progress waiting for event acknowledgement.
 
 `subscribe_hooks` lets an extension request blocking runtime hook calls. Supported hooks are `context_transform`, which rewrites provider-facing context messages without changing the durable transcript; `provider_request`, which runs before the provider stream begins; and `provider_response`, which runs after the provider stream completes. A hook result can deny the operation with `{"deny":true,"error":"..."}`. `context_transform` can replace context by returning `messages`, and `provider_request` can replace the provider request by returning a `request` object. Hook calls are blocking, so handlers should return quickly.
 

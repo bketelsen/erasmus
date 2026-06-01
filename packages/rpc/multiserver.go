@@ -23,6 +23,7 @@ type RuntimeFactory func(context.Context, RuntimeCreateParams) (*Runtime, error)
 // Runtime is one RPC-managed harness plus optional runtime resources.
 type Runtime struct {
 	Harness                 *harness.Harness
+	OnEvent                 func(context.Context, event.Event) error
 	ExtensionCommands       func(context.Context) ([]ExtensionCommandSummary, error)
 	ExecuteExtensionCommand func(context.Context, string, json.RawMessage) ([]ExtensionHostAction, error)
 	ExtensionDiagnostics    func(context.Context) ([]string, error)
@@ -308,7 +309,7 @@ func (s *MultiServer) handle(ctx context.Context, req Request, write func(any) e
 		s.wg.Add(1)
 		go func() {
 			defer s.wg.Done()
-			streamRuntimeEvents(params.RuntimeID, events, write)
+			streamRuntimeEvents(ctx, params.RuntimeID, events, rt.OnEvent, write)
 		}()
 		return write(Response{ID: req.ID, Result: map[string]string{"status": "started"}})
 	case "runtime_set_model":
@@ -444,7 +445,7 @@ func (s *MultiServer) handle(ctx context.Context, req Request, write func(any) e
 		s.wg.Add(1)
 		go func() {
 			defer s.wg.Done()
-			streamRuntimeEvents(rt.ID, events, write)
+			streamRuntimeEvents(ctx, rt.ID, events, rt.Runtime.OnEvent, write)
 		}()
 		return write(Response{ID: req.ID, Result: map[string]string{"status": "started"}})
 	case "runtime_abort":
@@ -603,8 +604,14 @@ func (s *MultiServer) listRuntimes() []RuntimeSummary {
 	return out
 }
 
-func streamRuntimeEvents(runtimeID string, events <-chan event.Event, write func(any) error) {
+func streamRuntimeEvents(ctx context.Context, runtimeID string, events <-chan event.Event, onEvent func(context.Context, event.Event) error, write func(any) error) {
 	for ev := range events {
+		if onEvent != nil {
+			if err := onEvent(ctx, ev); err != nil {
+				_ = write(RuntimeEventNotification{Method: "runtime_event", Params: RuntimeEventPayload{RuntimeID: runtimeID, Type: "error", Event: event.Error{Err: err.Error()}}})
+				return
+			}
+		}
 		_ = write(RuntimeEventNotification{Method: "runtime_event", Params: RuntimeEventPayload{RuntimeID: runtimeID, Type: ev.Type(), Event: ev}})
 	}
 }

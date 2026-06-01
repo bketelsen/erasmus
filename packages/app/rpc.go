@@ -8,6 +8,7 @@ import (
 
 	"erasmus/packages/auth"
 	"erasmus/packages/config"
+	"erasmus/packages/event"
 	"erasmus/packages/harness"
 	"erasmus/packages/model"
 	"erasmus/packages/rpc"
@@ -87,8 +88,18 @@ func RunRPCConfigured(ctx context.Context, in io.Reader, out io.Writer, cfg conf
 			_ = sess.Close(ctx)
 			return nil, err
 		}
+		if extensions != nil {
+			if err := applyExtensionHostActions(ctx, h, extensions.DrainHostActions()); err != nil {
+				extensions.Close()
+				_ = sess.Close(ctx)
+				return nil, err
+			}
+		}
 		return &rpc.Runtime{
 			Harness: h,
+			OnEvent: func(ctx context.Context, ev event.Event) error {
+				return forwardExtensionRuntimeEvent(ctx, h, extensions, ev)
+			},
 			ExtensionCommands: func(ctx context.Context) ([]rpc.ExtensionCommandSummary, error) {
 				var out []rpc.ExtensionCommandSummary
 				if extensions == nil {

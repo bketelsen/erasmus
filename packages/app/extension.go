@@ -15,6 +15,7 @@ import (
 	"erasmus/packages/event"
 	"erasmus/packages/extension"
 	extproto "erasmus/packages/extension/proto"
+	"erasmus/packages/harness"
 	"erasmus/packages/message"
 	"erasmus/packages/provider"
 	"erasmus/packages/skill"
@@ -160,6 +161,51 @@ func (e *ConfiguredExtensions) DrainHostActions() []extension.HostAction {
 	return out
 }
 
+func (e *ConfiguredExtensions) drainHostActionsAfterEvent(ctx context.Context, typ string) []extension.HostAction {
+	actions := e.DrainHostActions()
+	if e == nil || !e.eventSubscribed(typ) {
+		return actions
+	}
+	const quiet = 20 * time.Millisecond
+	deadline := time.NewTimer(200 * time.Millisecond)
+	defer deadline.Stop()
+	quietTimer := time.NewTimer(quiet)
+	defer quietTimer.Stop()
+	for {
+		select {
+		case <-ctx.Done():
+			return actions
+		case <-deadline.C:
+			return actions
+		case <-quietTimer.C:
+			next := e.DrainHostActions()
+			if len(next) == 0 {
+				return actions
+			}
+			actions = append(actions, next...)
+			if !quietTimer.Stop() {
+				select {
+				case <-quietTimer.C:
+				default:
+				}
+			}
+			quietTimer.Reset(quiet)
+		}
+	}
+}
+
+func (e *ConfiguredExtensions) eventSubscribed(typ string) bool {
+	if e == nil {
+		return false
+	}
+	for _, proc := range e.procs {
+		if proc.EventSubscribed(typ) {
+			return true
+		}
+	}
+	return false
+}
+
 // Commands returns all registered subprocess commands.
 func (e *ConfiguredExtensions) Commands() []extension.Command {
 	if e == nil {
@@ -237,6 +283,16 @@ func (e *ConfiguredExtensions) PublishEvent(ctx context.Context, ev event.Event)
 		}
 	}
 	return nil
+}
+
+func forwardExtensionRuntimeEvent(ctx context.Context, h *harness.Harness, extensions *ConfiguredExtensions, ev event.Event) error {
+	if extensions == nil {
+		return nil
+	}
+	if err := extensions.PublishEvent(ctx, ev); err != nil {
+		return err
+	}
+	return applyExtensionHostActions(ctx, h, extensions.drainHostActionsAfterEvent(ctx, ev.Type()))
 }
 
 // BeforeProviderRequest lets subscribed extensions inspect or reject provider requests.

@@ -121,10 +121,7 @@ func RunConfigured(ctx context.Context, opts RunOptions, cfg config.Config, stor
 	}
 	for ev := range events {
 		if extensions != nil {
-			if err := extensions.PublishEvent(ctx, ev); err != nil {
-				return err
-			}
-			if err := applyExtensionHostActions(ctx, h, extensions.DrainHostActions()); err != nil {
+			if err := forwardExtensionRuntimeEvent(ctx, h, extensions, ev); err != nil {
 				return err
 			}
 		}
