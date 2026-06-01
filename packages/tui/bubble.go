@@ -487,33 +487,43 @@ func (m bubbleModel) View() tea.View {
 		v.AltScreen = true
 		return v
 	}
+	header := m.headerView()
 	inputTitle := m.theme.Help.Render(m.inputTitle())
+	inputView := m.theme.Input.Width(max(1, m.width-2)).Render(m.input.View())
+	dialog := m.activeDialogView()
+	reserved := lipgloss.Height(header) + lipgloss.Height(inputTitle) + lipgloss.Height(inputView) + lipgloss.Height(dialog) + m.theme.Viewport.GetVerticalFrameSize()
+	m.viewport.SetHeight(max(1, m.height-reserved))
 	body := lipgloss.JoinVertical(lipgloss.Left,
-		m.headerView(),
+		header,
 		m.theme.Viewport.Width(max(1, m.width-2)).Render(m.viewport.View()),
 		inputTitle,
-		m.theme.Input.Width(max(1, m.width-2)).Render(m.input.View()),
+		inputView,
 	)
-	if m.dialog == dialogSessions {
-		body = lipgloss.JoinVertical(lipgloss.Left, body, m.sessionsDialogView())
-	}
-	if m.dialog == dialogModel {
-		body = lipgloss.JoinVertical(lipgloss.Left, body, m.modelDialogView())
-	}
-	if m.dialog == dialogTree {
-		body = lipgloss.JoinVertical(lipgloss.Left, body, m.treeDialogView())
-	}
-	if m.dialog == dialogSwarm {
-		body = lipgloss.JoinVertical(lipgloss.Left, body, m.swarmDialogView())
-	}
-	if m.dialog == dialogHelp {
-		body = lipgloss.JoinVertical(lipgloss.Left, body, m.helpDialogView())
+	if dialog != "" {
+		body = lipgloss.JoinVertical(lipgloss.Left, body, dialog)
 	}
 	v := tea.NewView(body)
 	v.AltScreen = true
 	v.MouseMode = tea.MouseModeCellMotion
 	v.WindowTitle = "Erasmus"
 	return v
+}
+
+func (m bubbleModel) activeDialogView() string {
+	switch m.dialog {
+	case dialogSessions:
+		return m.sessionsDialogView()
+	case dialogModel:
+		return m.modelDialogView()
+	case dialogTree:
+		return m.treeDialogView()
+	case dialogSwarm:
+		return m.swarmDialogView()
+	case dialogHelp:
+		return m.helpDialogView()
+	default:
+		return ""
+	}
 }
 
 func (m bubbleModel) inputTitle() string {
@@ -528,11 +538,11 @@ func (m bubbleModel) inputTitle() string {
 }
 
 func (m *bubbleModel) resize() {
-	inputHeight := 7
+	inputHeight := 8
 	headerHeight := 2
 	available := m.height - inputHeight - headerHeight - 1
-	if available < 5 {
-		available = 5
+	if available < 1 {
+		available = 1
 	}
 	m.viewport.SetWidth(max(10, m.width-6))
 	m.viewport.SetHeight(available)
@@ -701,7 +711,23 @@ func (m bubbleModel) helpDialogView() string {
 	b.WriteString("  ctrl+u/d      scroll half page\n")
 	b.WriteString("  Home/End      top / resume follow at bottom\n")
 	b.WriteString("  mouse wheel   scrollback\n")
-	return m.theme.Dialog.Width(max(1, m.width-2)).Render(b.String())
+	return m.renderDialog(b.String())
+}
+
+func (m bubbleModel) renderDialog(content string) string {
+	style := m.theme.Dialog.Width(max(1, m.width-2))
+	if m.height > 0 {
+		style = style.MaxHeight(m.maxDialogHeight())
+	}
+	return style.Render(content)
+}
+
+func (m bubbleModel) maxDialogHeight() int {
+	header := m.headerView()
+	inputTitle := m.theme.Help.Render(m.inputTitle())
+	inputView := m.theme.Input.Width(max(1, m.width-2)).Render(m.input.View())
+	minViewport := 1 + m.theme.Viewport.GetVerticalFrameSize()
+	return max(1, m.height-lipgloss.Height(header)-lipgloss.Height(inputTitle)-lipgloss.Height(inputView)-minViewport)
 }
 
 func (m bubbleModel) dialogName(dialog dialogMode) string {
@@ -922,7 +948,7 @@ func (m bubbleModel) sessionsDialogView() string {
 	b.WriteString("Sessions — ↑/↓ select · enter open · esc close\n")
 	if len(m.sessions) == 0 {
 		b.WriteString("no sessions found")
-		return m.theme.Dialog.Width(max(1, m.width-2)).Render(b.String())
+		return m.renderDialog(b.String())
 	}
 	start := 0
 	if m.selectedSession > 8 {
@@ -937,7 +963,7 @@ func (m bubbleModel) sessionsDialogView() string {
 		}
 		b.WriteString(line + "\n")
 	}
-	return m.theme.Dialog.Width(max(1, m.width-2)).Render(b.String())
+	return m.renderDialog(b.String())
 }
 
 func (m *bubbleModel) renderSessionTranscript() {
@@ -1111,7 +1137,7 @@ func (m bubbleModel) modelDialogView() string {
 			fmt.Fprintf(&b, "%s ", label)
 		}
 	}
-	return m.theme.Dialog.Width(max(1, m.width-2)).Render(b.String())
+	return m.renderDialog(b.String())
 }
 
 func (m *bubbleModel) openTreeDialog() (bubbleModel, tea.Cmd) {
@@ -1163,7 +1189,7 @@ func (m bubbleModel) treeDialogView() string {
 	b.WriteString("Session tree — ↑/↓ select · enter move · esc close\n")
 	if len(m.tree.Entries) == 0 {
 		b.WriteString("no tree entries")
-		return m.theme.Dialog.Width(max(1, m.width-2)).Render(b.String())
+		return m.renderDialog(b.String())
 	}
 	start := 0
 	if m.selectedTree > 8 {
@@ -1186,7 +1212,7 @@ func (m bubbleModel) treeDialogView() string {
 		}
 		b.WriteString(line + "\n")
 	}
-	return m.theme.Dialog.Width(max(1, m.width-2)).Render(b.String())
+	return m.renderDialog(b.String())
 }
 
 func (m *bubbleModel) openSwarmDialog() (bubbleModel, tea.Cmd) {
@@ -1445,7 +1471,7 @@ func (m bubbleModel) swarmDialogView() string {
 	}
 	if len(m.swarmServers) == 0 {
 		b.WriteString("no registered swarm servers")
-		return m.theme.Dialog.Width(max(1, m.width-2)).Render(b.String())
+		return m.renderDialog(b.String())
 	}
 	for i, server := range m.swarmServers {
 		reachable := "stale"
@@ -1506,7 +1532,7 @@ func (m bubbleModel) swarmDialogView() string {
 			b.WriteString("\n")
 		}
 	}
-	return m.theme.Dialog.Width(max(1, m.width-2)).Render(b.String())
+	return m.renderDialog(b.String())
 }
 
 func (m *bubbleModel) runCommand(line string) tea.Cmd {

@@ -13,6 +13,7 @@ import (
 	"erasmus/packages/session/memory"
 
 	tea "charm.land/bubbletea/v2"
+	"charm.land/lipgloss/v2"
 )
 
 func TestAppRunPromptStateQuit(t *testing.T) {
@@ -206,6 +207,53 @@ func TestSlashHelpCommandStillRunsFullScreen(t *testing.T) {
 	got := updated.(bubbleModel)
 	if got.searchActive {
 		t.Fatal("slash opened search")
+	}
+}
+
+func TestBubbleLayoutFitsWindowHeight(t *testing.T) {
+	ctx := context.Background()
+	h, err := harness.New(ctx, harness.Config{
+		Session: memory.New("tui-layout-test"),
+		Model:   model.Model{Provider: "fake", ID: "echo"},
+		Stream: func(ctx context.Context, req provider.Request) (<-chan provider.Event, error) {
+			return streamText("ok"), nil
+		},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, size := range []tea.WindowSizeMsg{
+		{Width: 80, Height: 12},
+		{Width: 80, Height: 24},
+		{Width: 120, Height: 40},
+	} {
+		updated, _ := newBubbleModel(ctx, &App{Harness: h}).Update(size)
+		m := updated.(bubbleModel)
+		view := m.View()
+		if got, want := lipgloss.Height(view.Content), size.Height; got > want {
+			t.Fatalf("%dx%d view height = %d, want <= %d", size.Width, size.Height, got, want)
+		}
+	}
+}
+
+func TestBubbleDialogLayoutFitsWindowHeight(t *testing.T) {
+	ctx := context.Background()
+	h, err := harness.New(ctx, harness.Config{
+		Session: memory.New("tui-dialog-layout-test"),
+		Model:   model.Model{Provider: "fake", ID: "echo"},
+		Stream: func(ctx context.Context, req provider.Request) (<-chan provider.Event, error) {
+			return streamText("ok"), nil
+		},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	updated, _ := newBubbleModel(ctx, &App{Harness: h}).Update(tea.WindowSizeMsg{Width: 100, Height: 24})
+	m := updated.(bubbleModel)
+	m.dialog = dialogHelp
+	view := m.View()
+	if got, want := lipgloss.Height(view.Content), 24; got > want {
+		t.Fatalf("help dialog view height = %d, want <= %d", got, want)
 	}
 }
 
