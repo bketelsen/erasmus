@@ -90,3 +90,45 @@ func TestStreamHTTPError(t *testing.T) {
 		t.Fatal("expected http error")
 	}
 }
+
+func TestDiscoverModels(t *testing.T) {
+	var gotAuth string
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/models" {
+			t.Fatalf("path = %s", r.URL.Path)
+		}
+		gotAuth = r.Header.Get("Authorization")
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"data":[{"id":"gpt-test"},{"id":"gpt-next"}]}`))
+	}))
+	defer server.Close()
+
+	client, err := New(Config{APIKey: "test-key", BaseURL: server.URL, HTTPClient: server.Client()})
+	if err != nil {
+		t.Fatal(err)
+	}
+	models, err := client.DiscoverModels(context.Background(), "openai")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if gotAuth != "Bearer test-key" {
+		t.Fatalf("auth header = %q", gotAuth)
+	}
+	if len(models) != 2 || models[0].Provider != "openai" || models[0].ID != "gpt-next" || models[0].Source != "live" || models[1].ID != "gpt-test" {
+		t.Fatalf("models = %+v", models)
+	}
+}
+
+func TestDiscoverModelsHTTPError(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		http.Error(w, "bad key", http.StatusUnauthorized)
+	}))
+	defer server.Close()
+	client, err := New(Config{APIKey: "bad", BaseURL: server.URL, HTTPClient: server.Client()})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := client.DiscoverModels(context.Background(), "openai"); err == nil {
+		t.Fatal("expected http error")
+	}
+}

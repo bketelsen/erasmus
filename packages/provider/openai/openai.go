@@ -52,6 +52,44 @@ func New(cfg Config) (*Client, error) {
 // Name returns the provider name.
 func (c *Client) Name() string { return "openai" }
 
+// DiscoverModels lists models currently reported by the OpenAI models endpoint.
+func (c *Client) DiscoverModels(ctx context.Context, provider string) ([]model.Model, error) {
+	if provider == "" {
+		provider = "openai"
+	}
+	hreq, err := http.NewRequestWithContext(ctx, http.MethodGet, c.base+"/models", nil)
+	if err != nil {
+		return nil, err
+	}
+	hreq.Header.Set("Authorization", "Bearer "+c.apiKey)
+	resp, err := c.http.Do(hreq)
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		data, _ := io.ReadAll(io.LimitReader(resp.Body, 4096))
+		return nil, fmt.Errorf("openai models request failed: %s: %s", resp.Status, strings.TrimSpace(string(data)))
+	}
+	var body struct {
+		Data []struct {
+			ID string `json:"id"`
+		} `json:"data"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&body); err != nil {
+		return nil, err
+	}
+	models := make([]model.Model, 0, len(body.Data))
+	for _, item := range body.Data {
+		if item.ID == "" {
+			continue
+		}
+		models = append(models, model.Model{Provider: provider, ID: item.ID, DisplayName: item.ID, Source: "live"})
+	}
+	sort.Slice(models, func(i, j int) bool { return models[i].ID < models[j].ID })
+	return models, nil
+}
+
 // Stream sends a chat completion request and returns normalized provider events.
 func (c *Client) Stream(ctx context.Context, req provider.Request) (<-chan provider.Event, error) {
 	body, err := c.requestBody(req)

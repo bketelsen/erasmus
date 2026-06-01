@@ -169,7 +169,7 @@ func newModelsRefreshCommand() *cobra.Command {
 			if len(args) > 0 {
 				provider = args[0]
 			}
-			models, err := app.RefreshModelCache(context.Background(), provider, model.NewFileCache(app.DefaultModelCachePath()))
+			models, err := app.RefreshModelCacheWithAuth(context.Background(), provider, model.NewFileCache(app.DefaultModelCachePath()), authStore())
 			if err != nil {
 				return err
 			}

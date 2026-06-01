@@ -6,8 +6,10 @@ import (
 	"path/filepath"
 	"time"
 
+	"erasmus/packages/auth"
 	"erasmus/packages/config"
 	"erasmus/packages/model"
+	"erasmus/packages/provider/openai"
 )
 
 // Models returns all known models from catalog, using the default catalog when nil.
@@ -75,13 +77,18 @@ func DefaultModelCachePath() string {
 
 // RefreshModelCache discovers models for a provider and writes them to the cache.
 func RefreshModelCache(ctx context.Context, provider string, cache model.Cache) ([]model.Model, error) {
+	return RefreshModelCacheWithAuth(ctx, provider, cache, nil)
+}
+
+// RefreshModelCacheWithAuth discovers models for a provider using credentials when required.
+func RefreshModelCacheWithAuth(ctx context.Context, provider string, cache model.Cache, store auth.Store) ([]model.Model, error) {
 	if provider == "" {
 		provider = "fake"
 	}
 	if cache == nil {
 		return nil, fmt.Errorf("model cache is required")
 	}
-	models, err := discoverProviderModels(ctx, provider)
+	models, err := discoverProviderModels(ctx, provider, store)
 	if err != nil {
 		return nil, err
 	}
@@ -91,7 +98,7 @@ func RefreshModelCache(ctx context.Context, provider string, cache model.Cache) 
 	return models, nil
 }
 
-func discoverProviderModels(ctx context.Context, provider string) ([]model.Model, error) {
+func discoverProviderModels(ctx context.Context, provider string, store auth.Store) ([]model.Model, error) {
 	if err := ctx.Err(); err != nil {
 		return nil, err
 	}
@@ -102,6 +109,16 @@ func discoverProviderModels(ctx context.Context, provider string) ([]model.Model
 			models[i].Source = "live"
 		}
 		return models, nil
+	case "openai":
+		cred, err := credentialForProvider(ctx, store, "openai")
+		if err != nil {
+			return nil, err
+		}
+		client, err := openai.New(openai.Config{APIKey: cred.APIKey})
+		if err != nil {
+			return nil, err
+		}
+		return client.DiscoverModels(ctx, "openai")
 	default:
 		return nil, fmt.Errorf("model discovery for provider %q is not implemented", provider)
 	}

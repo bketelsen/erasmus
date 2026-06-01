@@ -3,6 +3,7 @@ package app_test
 import (
 	"context"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"erasmus/packages/app"
@@ -70,5 +71,12 @@ func TestRefreshModelCacheWritesFakeProviderModels(t *testing.T) {
 	}
 	if len(cached) != 1 || cached[0].Provider != "fake" || cached[0].ID != "echo" || cached[0].Source != "cache" {
 		t.Fatalf("cached models = %+v", cached)
+	}
+}
+
+func TestRefreshModelCacheOpenAIRequiresAuthStore(t *testing.T) {
+	_, err := app.RefreshModelCacheWithAuth(context.Background(), "openai", model.NewFileCache(filepath.Join(t.TempDir(), "models.json")), nil)
+	if err == nil || !strings.Contains(err.Error(), `auth store is required for provider "openai"`) {
+		t.Fatalf("err = %v", err)
 	}
 }
