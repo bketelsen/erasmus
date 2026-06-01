@@ -43,6 +43,7 @@ type PromptOptions struct{}
 type Hooks struct {
 	BeforeAgentStart      func(context.Context, BeforeAgentStartContext) (BeforeAgentStartResult, error)
 	BeforeProviderRequest func(context.Context, *provider.Request) error
+	AfterProviderResponse func(context.Context, ProviderResponseContext) error
 	ToolCall              func(context.Context, ToolCallContext) (ToolCallDecision, error)
 	ToolResult            func(context.Context, ToolResultContext) (ToolResultPatch, error)
 	BeforeCompact         func(context.Context, BeforeCompactContext) (BeforeCompactResult, error)
@@ -59,6 +60,12 @@ type BeforeAgentStartContext struct {
 // BeforeAgentStartResult may patch agent run inputs.
 type BeforeAgentStartResult struct {
 	Prompt *string
+}
+
+// ProviderResponseContext describes a completed normalized provider stream.
+type ProviderResponseContext struct {
+	Request provider.Request
+	Events  []provider.Event
 }
 
 // ToolCallContext describes a pending tool call observed by harness hooks.
@@ -198,14 +205,39 @@ func New(ctx context.Context, cfg Config) (*Harness, error) {
 }
 
 func wrapProviderStream(stream provider.StreamFunc, hooks Hooks) provider.StreamFunc {
-	if hooks.BeforeProviderRequest == nil {
+	if hooks.BeforeProviderRequest == nil && hooks.AfterProviderResponse == nil {
 		return stream
 	}
 	return func(ctx context.Context, req provider.Request) (<-chan provider.Event, error) {
-		if err := hooks.BeforeProviderRequest(ctx, &req); err != nil {
-			return nil, err
+		if hooks.BeforeProviderRequest != nil {
+			if err := hooks.BeforeProviderRequest(ctx, &req); err != nil {
+				return nil, err
+			}
 		}
-		return stream(ctx, req)
+		events, err := stream(ctx, req)
+		if err != nil || hooks.AfterProviderResponse == nil {
+			return events, err
+		}
+		out := make(chan provider.Event)
+		go func() {
+			defer close(out)
+			seen := []provider.Event{}
+			for ev := range events {
+				seen = append(seen, ev)
+				select {
+				case out <- ev:
+				case <-ctx.Done():
+					return
+				}
+			}
+			if err := hooks.AfterProviderResponse(ctx, ProviderResponseContext{Request: req, Events: append([]provider.Event(nil), seen...)}); err != nil {
+				select {
+				case out <- provider.Error{Err: err.Error()}:
+				case <-ctx.Done():
+				}
+			}
+		}()
+		return out, nil
 	}
 }
 

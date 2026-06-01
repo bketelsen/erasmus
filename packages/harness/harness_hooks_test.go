@@ -293,6 +293,73 @@ func TestHarnessBeforeProviderRequestErrorStopsRun(t *testing.T) {
 	drain(events)
 }
 
+func TestHarnessAfterProviderResponseObservesEvents(t *testing.T) {
+	ctx := context.Background()
+	var observed harness.ProviderResponseContext
+	stream := func(ctx context.Context, req provider.Request) (<-chan provider.Event, error) {
+		return streamEvents(provider.MessageStart{MessageID: "a1"}, provider.TextDelta{Text: "done"}, provider.MessageEnd{StopReason: "end_turn"}), nil
+	}
+	h, err := harness.New(ctx, harness.Config{
+		Session: memory.New("test"),
+		Stream:  stream,
+		Model:   model.Model{Provider: "fake", ID: "test"},
+		Hooks: harness.Hooks{
+			AfterProviderResponse: func(ctx context.Context, response harness.ProviderResponseContext) error {
+				observed = response
+				return nil
+			},
+		},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	events, err := h.Prompt(ctx, "hi", harness.PromptOptions{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := h.Wait(ctx); err != nil {
+		t.Fatal(err)
+	}
+	drain(events)
+	if observed.Request.Model.ID != "test" {
+		t.Fatalf("observed request model = %+v", observed.Request.Model)
+	}
+	if len(observed.Events) != 3 {
+		t.Fatalf("events len = %d, want 3", len(observed.Events))
+	}
+	if delta, ok := observed.Events[1].(provider.TextDelta); !ok || delta.Text != "done" {
+		t.Fatalf("event[1] = %#v, want text delta done", observed.Events[1])
+	}
+}
+
+func TestHarnessAfterProviderResponseErrorStopsRun(t *testing.T) {
+	ctx := context.Background()
+	stream := func(ctx context.Context, req provider.Request) (<-chan provider.Event, error) {
+		return streamEvents(provider.MessageStart{MessageID: "a1"}, provider.TextDelta{Text: "done"}, provider.MessageEnd{StopReason: "end_turn"}), nil
+	}
+	h, err := harness.New(ctx, harness.Config{
+		Session: memory.New("test"),
+		Stream:  stream,
+		Model:   model.Model{Provider: "fake", ID: "test"},
+		Hooks: harness.Hooks{
+			AfterProviderResponse: func(context.Context, harness.ProviderResponseContext) error {
+				return errors.New("response blocked")
+			},
+		},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	events, err := h.Prompt(ctx, "hi", harness.PromptOptions{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := h.Wait(ctx); err == nil || err.Error() != "response blocked" {
+		t.Fatalf("wait error = %v, want response blocked", err)
+	}
+	drain(events)
+}
+
 func TestHarnessBeforeAgentStartCanPatchPrompt(t *testing.T) {
 	ctx := context.Background()
 	seen := false
