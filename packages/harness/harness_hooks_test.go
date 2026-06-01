@@ -293,6 +293,83 @@ func TestHarnessBeforeProviderRequestErrorStopsRun(t *testing.T) {
 	drain(events)
 }
 
+func TestHarnessBeforeAgentStartCanPatchPrompt(t *testing.T) {
+	ctx := context.Background()
+	seen := false
+	stream := func(ctx context.Context, req provider.Request) (<-chan provider.Event, error) {
+		seen = true
+		if len(req.Messages) != 1 {
+			t.Fatalf("messages len = %d, want 1", len(req.Messages))
+		}
+		if got := req.Messages[0].Content[0].(message.Text).Text; got != "patched prompt" {
+			t.Fatalf("prompt = %q, want patched prompt", got)
+		}
+		return streamEvents(provider.MessageStart{MessageID: "a1"}, provider.TextDelta{Text: "done"}, provider.MessageEnd{StopReason: "end_turn"}), nil
+	}
+	h, err := harness.New(ctx, harness.Config{
+		Session: memory.New("test"),
+		Stream:  stream,
+		Model:   model.Model{Provider: "fake", ID: "test"},
+		Hooks: harness.Hooks{
+			BeforeAgentStart: func(ctx context.Context, start harness.BeforeAgentStartContext) (harness.BeforeAgentStartResult, error) {
+				if start.Action != "prompt" {
+					t.Fatalf("action = %q, want prompt", start.Action)
+				}
+				if start.Prompt != "original prompt" {
+					t.Fatalf("prompt = %q, want original prompt", start.Prompt)
+				}
+				prompt := "patched prompt"
+				return harness.BeforeAgentStartResult{Prompt: &prompt}, nil
+			},
+		},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	events, err := h.Prompt(ctx, "original prompt", harness.PromptOptions{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := h.Wait(ctx); err != nil {
+		t.Fatal(err)
+	}
+	drain(events)
+	if !seen {
+		t.Fatal("provider stream was not called")
+	}
+}
+
+func TestHarnessBeforeAgentStartCanRejectContinue(t *testing.T) {
+	ctx := context.Background()
+	hookErr := errors.New("continue blocked")
+	stream := func(ctx context.Context, req provider.Request) (<-chan provider.Event, error) {
+		t.Fatal("provider stream should not be called")
+		return nil, nil
+	}
+	h, err := harness.New(ctx, harness.Config{
+		Session: memory.New("test"),
+		Stream:  stream,
+		Model:   model.Model{Provider: "fake", ID: "test"},
+		Hooks: harness.Hooks{
+			BeforeAgentStart: func(ctx context.Context, start harness.BeforeAgentStartContext) (harness.BeforeAgentStartResult, error) {
+				if start.Action != "continue" {
+					t.Fatalf("action = %q, want continue", start.Action)
+				}
+				return harness.BeforeAgentStartResult{}, hookErr
+			},
+		},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := h.Continue(ctx); !errors.Is(err, hookErr) {
+		t.Fatalf("continue error = %v, want %v", err, hookErr)
+	}
+	if err := h.Wait(ctx); err != nil {
+		t.Fatalf("wait error = %v, want nil", err)
+	}
+}
+
 type recordingTool struct {
 	name string
 	args json.RawMessage

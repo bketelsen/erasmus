@@ -41,12 +41,24 @@ type PromptOptions struct{}
 
 // Hooks customizes harness-level runtime behavior.
 type Hooks struct {
+	BeforeAgentStart      func(context.Context, BeforeAgentStartContext) (BeforeAgentStartResult, error)
 	BeforeProviderRequest func(context.Context, *provider.Request) error
 	ToolCall              func(context.Context, ToolCallContext) (ToolCallDecision, error)
 	ToolResult            func(context.Context, ToolResultContext) (ToolResultPatch, error)
 	BeforeCompact         func(context.Context, BeforeCompactContext) (BeforeCompactResult, error)
 	AfterCompact          func(context.Context, AfterCompactContext) error
 	SessionTree           func(context.Context, SessionTreeContext) (SessionTreeResult, error)
+}
+
+// BeforeAgentStartContext describes a requested agent run before it starts.
+type BeforeAgentStartContext struct {
+	Action string
+	Prompt string
+}
+
+// BeforeAgentStartResult may patch agent run inputs.
+type BeforeAgentStartResult struct {
+	Prompt *string
 }
 
 // ToolCallContext describes a pending tool call observed by harness hooks.
@@ -274,6 +286,15 @@ func composeLoopHooks(hooks loop.Hooks, harnessHooks Hooks, confirm func(context
 
 // Prompt starts a prompt and returns a subscription channel for future events.
 func (h *Harness) Prompt(ctx context.Context, text string, opts PromptOptions) (<-chan event.Event, error) {
+	if h.hooks.BeforeAgentStart != nil {
+		next, err := h.hooks.BeforeAgentStart(ctx, BeforeAgentStartContext{Action: "prompt", Prompt: text})
+		if err != nil {
+			return nil, err
+		}
+		if next.Prompt != nil {
+			text = *next.Prompt
+		}
+	}
 	ch, unsubscribe := h.eventChan()
 	if err := h.agent.Prompt(ctx, text, nil); err != nil {
 		unsubscribe()
@@ -285,6 +306,11 @@ func (h *Harness) Prompt(ctx context.Context, text string, opts PromptOptions) (
 
 // Continue continues the session.
 func (h *Harness) Continue(ctx context.Context) (<-chan event.Event, error) {
+	if h.hooks.BeforeAgentStart != nil {
+		if _, err := h.hooks.BeforeAgentStart(ctx, BeforeAgentStartContext{Action: "continue"}); err != nil {
+			return nil, err
+		}
+	}
 	ch, unsubscribe := h.eventChan()
 	if err := h.agent.Continue(ctx); err != nil {
 		unsubscribe()
