@@ -11,6 +11,7 @@ import (
 
 	"erasmus/packages/event"
 	"erasmus/packages/extension"
+	"erasmus/packages/extension/proto"
 	"erasmus/packages/message"
 )
 
@@ -91,4 +92,40 @@ done
 		time.Sleep(10 * time.Millisecond)
 	}
 	t.Fatal("extension did not observe settled event")
+}
+
+func TestProcessCallsSubscribedRuntimeHooks(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("shell script test")
+	}
+	path := filepath.Join(t.TempDir(), "ext.py")
+	script := `#!/usr/bin/env python3
+import json, sys
+print(json.dumps({"type":"hello","data":{"name":"hook-test","version":"1"}}), flush=True)
+print(json.dumps({"type":"subscribe_hooks","data":{"hooks":["provider_request"]}}), flush=True)
+for line in sys.stdin:
+    frame = json.loads(line)
+    if frame.get("type") == "hook_call" and frame.get("data", {}).get("hook") == "provider_request":
+        print(json.dumps({"type":"hook_result","id":frame.get("id"),"data":{"id":frame.get("id"),"deny":True,"error":"blocked by hook"}}), flush=True)
+`
+	if err := os.WriteFile(path, []byte(script), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	proc, err := extension.StartProcess(ctx, path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer proc.Close()
+	if !proc.HookSubscribed("provider_request") {
+		t.Fatal("hook not subscribed")
+	}
+	res, err := proc.CallHook(ctx, proto.HookCall{ID: "hook-1", Hook: "provider_request"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !res.Deny || res.Error != "blocked by hook" {
+		t.Fatalf("result = %+v", res)
+	}
 }

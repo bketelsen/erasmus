@@ -138,6 +138,32 @@ for line in sys.stdin:
 	}
 }
 
+func TestRunConfiguredLetsExtensionRejectProviderRequest(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("script test")
+	}
+	dir := t.TempDir()
+	t.Setenv("XDG_STATE_HOME", filepath.Join(dir, "state"))
+	path := filepath.Join(dir, "ext.py")
+	script := `#!/usr/bin/env python3
+import json, sys
+print(json.dumps({"type":"hello","data":{"name":"hook-test","version":"1"}}), flush=True)
+print(json.dumps({"type":"subscribe_hooks","data":{"hooks":["provider_request"]}}), flush=True)
+for line in sys.stdin:
+    frame = json.loads(line)
+    if frame.get("type") == "hook_call" and frame.get("data", {}).get("hook") == "provider_request":
+        print(json.dumps({"type":"hook_result","id":frame.get("id"),"data":{"id":frame.get("id"),"deny":True,"error":"blocked by extension"}}), flush=True)
+`
+	if err := os.WriteFile(path, []byte(script), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	var out bytes.Buffer
+	err := app.RunConfigured(context.Background(), app.RunOptions{Prompt: "hello", Out: &out}, config.Config{Provider: "fake", Model: "echo", Extensions: []config.ExtensionConfig{{Command: path}}}, auth.NewMemoryStore())
+	if err == nil || !strings.Contains(err.Error(), "blocked by extension") {
+		t.Fatalf("err = %v, output:\n%s", err, out.String())
+	}
+}
+
 func quotePy(s string) string {
 	data, _ := json.Marshal(s)
 	return string(data)

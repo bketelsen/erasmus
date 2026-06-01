@@ -26,7 +26,9 @@ type Process struct {
 	mu       sync.Mutex
 	pendingT map[string]chan proto.ToolResult
 	pendingC map[string]chan proto.CommandResult
+	pendingH map[string]chan proto.HookResult
 	subs     map[string]bool
+	hooks    map[string]bool
 	logs     *ringLog
 	writeMu  sync.Mutex
 	done     chan error
@@ -61,7 +63,7 @@ func StartProcessWithOptions(ctx context.Context, command string, opts ProcessOp
 	if err != nil {
 		return nil, err
 	}
-	p := &Process{cmd: cmd, stdin: stdin, frames: make(chan proto.Frame, 32), pendingT: map[string]chan proto.ToolResult{}, pendingC: map[string]chan proto.CommandResult{}, subs: map[string]bool{}, logs: logs, done: make(chan error, 1)}
+	p := &Process{cmd: cmd, stdin: stdin, frames: make(chan proto.Frame, 32), pendingT: map[string]chan proto.ToolResult{}, pendingC: map[string]chan proto.CommandResult{}, pendingH: map[string]chan proto.HookResult{}, subs: map[string]bool{}, hooks: map[string]bool{}, logs: logs, done: make(chan error, 1)}
 	p.manager = NewManager(p)
 	if err := cmd.Start(); err != nil {
 		_ = p.logs.Close()
@@ -121,6 +123,50 @@ func (p *Process) Close() error {
 		return p.logs.Close()
 	}
 	return nil
+}
+
+// HookSubscribed reports whether the subprocess subscribed to hook.
+func (p *Process) HookSubscribed(hook string) bool {
+	if p == nil {
+		return false
+	}
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	return p.hooks["*"] || p.hooks[hook]
+}
+
+// CallHook calls a subscribed extension runtime hook.
+func (p *Process) CallHook(ctx context.Context, call proto.HookCall) (proto.HookResult, error) {
+	if !p.HookSubscribed(call.Hook) {
+		return proto.HookResult{ID: call.ID}, nil
+	}
+	if call.ID == "" {
+		return proto.HookResult{}, fmt.Errorf("hook call id is required")
+	}
+	ch := make(chan proto.HookResult, 1)
+	p.mu.Lock()
+	p.pendingH[call.ID] = ch
+	p.mu.Unlock()
+	if err := p.write("hook_call", call.ID, call); err != nil {
+		p.mu.Lock()
+		delete(p.pendingH, call.ID)
+		p.mu.Unlock()
+		return proto.HookResult{}, err
+	}
+	select {
+	case res := <-ch:
+		return res, nil
+	case <-ctx.Done():
+		p.mu.Lock()
+		delete(p.pendingH, call.ID)
+		p.mu.Unlock()
+		return proto.HookResult{}, ctx.Err()
+	case err := <-p.done:
+		p.mu.Lock()
+		delete(p.pendingH, call.ID)
+		p.mu.Unlock()
+		return proto.HookResult{}, fmt.Errorf("extension process exited: %v%s%s", err, formatDiagnostics(p.Diagnostics()), formatDiagnosticsPath(p.LogPath()))
+	}
 }
 
 // PublishEvent forwards a runtime event to the subprocess when subscribed.
@@ -299,6 +345,18 @@ func (p *Process) handle(frame proto.Frame) error {
 			}
 		}
 		p.mu.Unlock()
+	case "subscribe_hooks":
+		var sub proto.SubscribeHooks
+		if err := proto.DecodeData(frame, &sub); err != nil {
+			return err
+		}
+		p.mu.Lock()
+		for _, hook := range sub.Hooks {
+			if hook != "" {
+				p.hooks[hook] = true
+			}
+		}
+		p.mu.Unlock()
 	case "tool_result":
 		res, err := decodeProcessToolResult(frame)
 		if err != nil {
@@ -317,6 +375,24 @@ func (p *Process) handle(frame proto.Frame) error {
 		p.mu.Lock()
 		ch := p.pendingT[res.ID]
 		delete(p.pendingT, res.ID)
+		p.mu.Unlock()
+		if ch != nil {
+			ch <- res
+		}
+	case "hook_result":
+		var res proto.HookResult
+		if err := proto.DecodeData(frame, &res); err != nil {
+			return err
+		}
+		if res.ID == "" {
+			res.ID = frame.ID
+		}
+		if p.logs != nil && res.Error != "" {
+			p.logs.AddSource("hook", "hook_result "+res.ID+": "+res.Error)
+		}
+		p.mu.Lock()
+		ch := p.pendingH[res.ID]
+		delete(p.pendingH, res.ID)
 		p.mu.Unlock()
 		if ch != nil {
 			ch <- res

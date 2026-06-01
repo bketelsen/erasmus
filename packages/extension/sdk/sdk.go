@@ -27,6 +27,9 @@ type CommandHandler func(context.Context, json.RawMessage) ([]proto.HostAction, 
 // EventHandler handles runtime events forwarded by the host.
 type EventHandler func(context.Context, proto.Event) ([]proto.HostAction, error)
 
+// HookHandler handles runtime hook calls from the host.
+type HookHandler func(context.Context, proto.HookCall) (proto.HookResult, error)
+
 // Tool describes a tool exposed by an extension subprocess.
 type Tool struct {
 	Name        string
@@ -48,6 +51,8 @@ type Extension struct {
 	Version  string
 	Events   []string
 	OnEvent  EventHandler
+	Hooks    []string
+	OnHook   HookHandler
 	Tools    []Tool
 	Commands []Command
 }
@@ -101,6 +106,11 @@ func SavePointAction(label string, value any) proto.HostAction {
 	return proto.HostAction{Type: "save_point", Data: data}
 }
 
+// DenyHookResult returns a hook result that rejects the host operation.
+func DenyHookResult(id, text string) proto.HookResult {
+	return proto.HookResult{ID: id, Deny: true, Error: text}
+}
+
 type runner struct {
 	ctx context.Context
 	ext Extension
@@ -129,6 +139,11 @@ func (r *runner) writeStartup() error {
 	}
 	if len(r.ext.Events) > 0 {
 		if err := r.write("subscribe", "", proto.Subscribe{Events: append([]string(nil), r.ext.Events...)}); err != nil {
+			return err
+		}
+	}
+	if len(r.ext.Hooks) > 0 {
+		if err := r.write("subscribe_hooks", "", proto.SubscribeHooks{Hooks: append([]string(nil), r.ext.Hooks...)}); err != nil {
 			return err
 		}
 	}
@@ -184,6 +199,15 @@ func (r *runner) handle(frame proto.Frame) error {
 			ev.Type = frame.ID
 		}
 		return r.handleEvent(ev)
+	case "hook_call":
+		var call proto.HookCall
+		if err := proto.DecodeData(frame, &call); err != nil {
+			return err
+		}
+		if call.ID == "" {
+			call.ID = frame.ID
+		}
+		return r.handleHookCall(call)
 	default:
 		return nil
 	}
@@ -227,6 +251,20 @@ func (r *runner) handleEvent(ev proto.Event) error {
 		}
 	}
 	return nil
+}
+
+func (r *runner) handleHookCall(call proto.HookCall) error {
+	if r.ext.OnHook == nil {
+		return r.write("hook_result", call.ID, proto.HookResult{ID: call.ID})
+	}
+	res, err := r.ext.OnHook(r.ctx, call)
+	if err != nil {
+		return r.write("hook_result", call.ID, proto.HookResult{ID: call.ID, Deny: true, Error: err.Error()})
+	}
+	if res.ID == "" {
+		res.ID = call.ID
+	}
+	return r.write("hook_result", call.ID, res)
 }
 
 func (r *runner) toolHandler(name string) ToolHandler {

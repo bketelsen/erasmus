@@ -8,11 +8,14 @@ import (
 	"path/filepath"
 	"regexp"
 	"strings"
+	"sync/atomic"
 	"time"
 
 	"erasmus/packages/config"
 	"erasmus/packages/event"
 	"erasmus/packages/extension"
+	extproto "erasmus/packages/extension/proto"
+	"erasmus/packages/provider"
 	"erasmus/packages/tool"
 )
 
@@ -111,8 +114,9 @@ func commandInput(input string) json.RawMessage {
 
 // ConfiguredExtensions is a running set of configured extension subprocesses.
 type ConfiguredExtensions struct {
-	procs []*extension.Process
-	tools tool.Registry
+	procs      []*extension.Process
+	tools      tool.Registry
+	nextHookID uint64
 }
 
 // Tools returns all registered subprocess tools.
@@ -219,6 +223,33 @@ func (e *ConfiguredExtensions) PublishEvent(ctx context.Context, ev event.Event)
 	for _, proc := range e.procs {
 		if err := proc.PublishEvent(ctx, ev); err != nil {
 			return err
+		}
+	}
+	return nil
+}
+
+// BeforeProviderRequest lets subscribed extensions inspect or reject provider requests.
+func (e *ConfiguredExtensions) BeforeProviderRequest(ctx context.Context, req *provider.Request) error {
+	if e == nil || req == nil {
+		return nil
+	}
+	for _, proc := range e.procs {
+		if !proc.HookSubscribed("provider_request") {
+			continue
+		}
+		id := fmt.Sprintf("provider-request-%d", atomic.AddUint64(&e.nextHookID, 1))
+		res, err := proc.CallHook(ctx, extproto.HookCall{ID: id, Hook: "provider_request", Request: *req})
+		if err != nil {
+			return withExtensionLogPath(err, proc.LogPath())
+		}
+		if res.Error != "" {
+			return withExtensionLogPath(fmt.Errorf("%s", res.Error), proc.LogPath())
+		}
+		if res.Deny {
+			return withExtensionLogPath(fmt.Errorf("provider request denied by extension"), proc.LogPath())
+		}
+		if res.Request != nil {
+			*req = *res.Request
 		}
 	}
 	return nil

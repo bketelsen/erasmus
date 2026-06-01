@@ -72,6 +72,17 @@ func RunConfigured(ctx context.Context, opts RunOptions, cfg config.Config, stor
 	if err != nil {
 		return err
 	}
+	if extensions != nil {
+		previous := resolved.Harness.Hooks.BeforeProviderRequest
+		resolved.Harness.Hooks.BeforeProviderRequest = func(ctx context.Context, req *provider.Request) error {
+			if previous != nil {
+				if err := previous(ctx, req); err != nil {
+					return err
+				}
+			}
+			return extensions.BeforeProviderRequest(ctx, req)
+		}
+	}
 	h, err := harness.New(ctx, resolved.Harness)
 	if err != nil {
 		return err

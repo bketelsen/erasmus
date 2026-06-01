@@ -111,6 +111,40 @@ func TestRunWithIOSubscribesAndHandlesEvents(t *testing.T) {
 	}
 }
 
+func TestRunWithIOSubscribesAndHandlesHooks(t *testing.T) {
+	hookCall, err := proto.EncodeFrame("hook_call", "hook-1", proto.HookCall{ID: "hook-1", Hook: "provider_request"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	var output bytes.Buffer
+
+	err = sdk.RunWithIO(context.Background(), sdk.Extension{
+		Name:  "test-extension",
+		Hooks: []string{"provider_request"},
+		OnHook: func(ctx context.Context, call proto.HookCall) (proto.HookResult, error) {
+			if call.ID != "hook-1" || call.Hook != "provider_request" {
+				t.Fatalf("call = %+v", call)
+			}
+			return sdk.DenyHookResult(call.ID, "blocked"), nil
+		},
+	}, strings.NewReader(encodeLines(t, hookCall)), &output)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	frames := decodeLines(t, output.String())
+	if got, want := frameTypes(frames), []string{"hello", "subscribe_hooks", "hook_result"}; !equalStrings(got, want) {
+		t.Fatalf("frame types = %v, want %v", got, want)
+	}
+	var result proto.HookResult
+	if err := proto.DecodeData(frames[2], &result); err != nil {
+		t.Fatal(err)
+	}
+	if result.ID != "hook-1" || !result.Deny || result.Error != "blocked" {
+		t.Fatalf("hook result = %+v", result)
+	}
+}
+
 func TestSetActiveToolsAction(t *testing.T) {
 	action := sdk.SetActiveToolsAction("read", "write")
 	if action.Type != "set_active_tools" {
