@@ -58,8 +58,9 @@ type swarmSpawnedMsg struct {
 }
 type swarmAttachTickMsg struct{ id int }
 type commandDoneMsg struct {
-	text string
-	err  error
+	title string
+	text  string
+	err   error
 }
 
 type dialogMode int
@@ -71,6 +72,7 @@ const (
 	dialogTree
 	dialogSwarm
 	dialogHelp
+	dialogCommand
 )
 
 type bubbleModel struct {
@@ -112,6 +114,8 @@ type bubbleModel struct {
 	swarmPromptMode    string
 	swarmAttached      bool
 	swarmAttachTickID  int
+	commandDialogTitle string
+	commandDialogText  string
 
 	searchActive              bool
 	searchQuery               string
@@ -252,7 +256,7 @@ func namedBubbleTheme(name string) bubbleTheme {
 func newBubbleModel(ctx context.Context, app *App) bubbleModel {
 	vp := viewport.New()
 	ta := textarea.New()
-	ta.Placeholder = "Ask Erasmus…  ctrl+s submit · PgUp/PgDn scroll · End follow · ctrl+o sessions · ctrl+p model · ctrl+t tree · ctrl+w swarm"
+	ta.Placeholder = "Ask Erasmus"
 	ta.Prompt = "┃ "
 	ta.ShowLineNumbers = false
 	ta.SetHeight(4)
@@ -262,7 +266,6 @@ func newBubbleModel(ctx context.Context, app *App) bubbleModel {
 	renderer, _ := glamour.NewTermRenderer(glamour.WithStandardStyle(theme.Glamour), glamour.WithWordWrap(100))
 	m := bubbleModel{app: app, ctx: ctx, viewport: vp, input: ta, status: "ready", follow: true, renderer: renderer, theme: theme, reasoningLevels: []string{"", "low", "medium", "high"}}
 	m.appendLine("Erasmus TUI — Bubble Tea full-screen shell")
-	m.appendLine("Press ? for help. Submit with ctrl+s. Search with ctrl+f. Slash commands such as /help run from the prompt. Scroll with PgUp/PgDn or ctrl+u/ctrl+d; End resumes follow. Swarm dashboard: ctrl+w.")
 	m.syncTranscript()
 	return m
 }
@@ -311,6 +314,13 @@ func (m bubbleModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if m.dialog == dialogHelp {
 			return m.updateHelpDialog(x)
 		}
+		if m.dialog == dialogCommand {
+			return m.updateCommandDialog(x)
+		}
+		if isMultilineInputKey(x) {
+			m.input.InsertString("\n")
+			return m, nil
+		}
 		if updated, cmd, ok := m.handleViewportKey(x); ok {
 			return updated, cmd
 		}
@@ -323,7 +333,7 @@ func (m bubbleModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, nil
 		case "ctrl+c":
 			return m, tea.Quit
-		case "ctrl+s":
+		case "enter":
 			return m.submit()
 		case "ctrl+o":
 			return m.openSessionsDialog()
@@ -531,16 +541,23 @@ func (m bubbleModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, m.loadSelectedSwarmStatus()
 	case commandDoneMsg:
 		m.running = false
-		if x.text != "" {
-			m.appendLine(x.text)
-		}
 		if x.err != nil {
 			m.err = x.err.Error()
 			m.status = "error"
-			m.appendLine("error: " + x.err.Error())
+			m.commandDialogTitle = "Command Error"
+			m.commandDialogText = x.err.Error()
+			m.dialog = dialogCommand
 		} else {
 			m.err = ""
 			m.status = "ready"
+			if x.text != "" {
+				m.commandDialogTitle = x.title
+				if m.commandDialogTitle == "" {
+					m.commandDialogTitle = "Command"
+				}
+				m.commandDialogText = x.text
+				m.dialog = dialogCommand
+			}
 		}
 		m.syncTranscript()
 		return m, nil
@@ -558,24 +575,26 @@ func (m bubbleModel) View() tea.View {
 		return v
 	}
 	header := m.headerView()
-	inputTitle := m.theme.Help.Render(m.inputTitle())
+	searchTitle := m.searchTitleView()
 	inputView := m.theme.Input.Width(max(1, m.width-2)).Render(m.input.View())
 	commandPopup := m.commandSuggestionView()
 	dialog := m.activeDialogView()
-	reserved := lipgloss.Height(header) + lipgloss.Height(inputTitle) + lipgloss.Height(commandPopup) + lipgloss.Height(inputView) + lipgloss.Height(dialog) + m.theme.Viewport.GetVerticalFrameSize()
+	reserved := lipgloss.Height(header) + lipgloss.Height(dialog) + lipgloss.Height(searchTitle) + lipgloss.Height(commandPopup) + lipgloss.Height(inputView) + m.theme.Viewport.GetVerticalFrameSize()
 	m.viewport.SetHeight(max(1, m.height-reserved))
 	body := lipgloss.JoinVertical(lipgloss.Left,
 		header,
 		m.theme.Viewport.Width(max(1, m.width-2)).Render(m.viewport.View()),
-		inputTitle,
 	)
+	if dialog != "" {
+		body = lipgloss.JoinVertical(lipgloss.Left, body, dialog)
+	}
+	if searchTitle != "" {
+		body = lipgloss.JoinVertical(lipgloss.Left, body, searchTitle)
+	}
 	if commandPopup != "" {
 		body = lipgloss.JoinVertical(lipgloss.Left, body, commandPopup)
 	}
 	body = lipgloss.JoinVertical(lipgloss.Left, body, inputView)
-	if dialog != "" {
-		body = lipgloss.JoinVertical(lipgloss.Left, body, dialog)
-	}
 	v := tea.NewView(body)
 	v.AltScreen = true
 	v.MouseMode = tea.MouseModeCellMotion
@@ -595,20 +614,21 @@ func (m bubbleModel) activeDialogView() string {
 		return m.swarmDialogView()
 	case dialogHelp:
 		return m.helpDialogView()
+	case dialogCommand:
+		return m.commandDialogView()
 	default:
 		return ""
 	}
 }
 
-func (m bubbleModel) inputTitle() string {
+func (m bubbleModel) searchTitleView() string {
 	if m.searchActive {
-		return "search: " + m.searchQuery + " · Enter find · Esc close"
+		return m.theme.Help.Render("search: " + m.searchQuery + " · Enter find · Esc close")
 	}
-	base := "ctrl+s submit · ctrl+f search · /help commands · PgUp/PgDn scroll · End follow · ctrl+o sessions · ctrl+p model · ctrl+t tree · ctrl+w swarm · ? help · ctrl+c quit"
-	if len(m.searchMatches) > 0 {
-		base += fmt.Sprintf(" · n/N search %d/%d", m.searchIndex+1, len(m.searchMatches))
+	if len(m.searchMatches) == 0 {
+		return ""
 	}
-	return base
+	return m.theme.Help.Render(fmt.Sprintf("search %d/%d · n/N next/previous", m.searchIndex+1, len(m.searchMatches)))
 }
 
 func (m *bubbleModel) resize() {
@@ -639,7 +659,7 @@ func (m bubbleModel) headerView() string {
 		reasoning = "default"
 	}
 	left := m.theme.Brand.Render("Erasmus") + " " + pill
-	right := m.theme.Muted.Render(fmt.Sprintf("%s/%s · reasoning %s · session %s", state.Agent.Model.Provider, state.Agent.Model.ID, reasoning, state.Session.ID))
+	right := m.theme.Muted.Render(fmt.Sprintf("%s/%s · reasoning %s · session %s · ? for help", state.Agent.Model.Provider, state.Agent.Model.ID, reasoning, state.Session.ID))
 	if !m.follow {
 		right += m.theme.Muted.Render(fmt.Sprintf(" · scrollback %.0f%% · End to follow", m.viewport.ScrollPercent()*100))
 	}
@@ -746,6 +766,20 @@ func (m bubbleModel) updateHelpDialog(key tea.KeyPressMsg) (tea.Model, tea.Cmd) 
 	return m, nil
 }
 
+func (m bubbleModel) updateCommandDialog(key tea.KeyPressMsg) (tea.Model, tea.Cmd) {
+	switch key.String() {
+	case "esc", "enter":
+		m.dialog = dialogNone
+		m.commandDialogTitle = ""
+		m.commandDialogText = ""
+		m.status = "ready"
+		return m, nil
+	case "ctrl+c":
+		return m, tea.Quit
+	}
+	return m, nil
+}
+
 func (m bubbleModel) dialogStatus(dialog dialogMode) string {
 	switch dialog {
 	case dialogSessions:
@@ -756,6 +790,8 @@ func (m bubbleModel) dialogStatus(dialog dialogMode) string {
 		return "tree"
 	case dialogSwarm:
 		return "swarm"
+	case dialogCommand:
+		return "command"
 	default:
 		return "ready"
 	}
@@ -770,7 +806,9 @@ func (m bubbleModel) helpDialogView() string {
 	b.WriteString("\n\n")
 	m.writeCurrentModeHelp(&b)
 	b.WriteString("Global\n")
-	b.WriteString("  ctrl+s        submit prompt / send dialog input\n")
+	b.WriteString("  enter         submit prompt / send dialog input\n")
+	b.WriteString("  shift+enter   insert newline\n")
+	b.WriteString("  ctrl+enter    insert newline when supported\n")
 	b.WriteString("  ctrl+o        sessions\n")
 	b.WriteString("  ctrl+p        model + reasoning\n")
 	b.WriteString("  ctrl+t        session tree\n")
@@ -789,6 +827,24 @@ func (m bubbleModel) helpDialogView() string {
 	return m.renderDialog(b.String())
 }
 
+func (m bubbleModel) commandDialogView() string {
+	title := strings.TrimSpace(m.commandDialogTitle)
+	if title == "" {
+		title = "Command"
+	}
+	text := strings.TrimSpace(m.commandDialogText)
+	if text == "" {
+		text = "No output."
+	}
+	var b strings.Builder
+	b.WriteString(title + " — enter/esc close\n\n")
+	b.WriteString(text)
+	if !strings.HasSuffix(text, "\n") {
+		b.WriteString("\n")
+	}
+	return m.renderDialog(b.String())
+}
+
 func (m bubbleModel) renderDialog(content string) string {
 	style := m.theme.Dialog.Width(max(1, m.width-2))
 	if m.height > 0 {
@@ -799,10 +855,10 @@ func (m bubbleModel) renderDialog(content string) string {
 
 func (m bubbleModel) maxDialogHeight() int {
 	header := m.headerView()
-	inputTitle := m.theme.Help.Render(m.inputTitle())
+	searchTitle := m.searchTitleView()
 	inputView := m.theme.Input.Width(max(1, m.width-2)).Render(m.input.View())
 	minViewport := 1 + m.theme.Viewport.GetVerticalFrameSize()
-	return max(1, m.height-lipgloss.Height(header)-lipgloss.Height(inputTitle)-lipgloss.Height(inputView)-minViewport)
+	return max(1, m.height-lipgloss.Height(header)-lipgloss.Height(searchTitle)-lipgloss.Height(inputView)-minViewport)
 }
 
 func (m bubbleModel) dialogName(dialog dialogMode) string {
@@ -818,6 +874,8 @@ func (m bubbleModel) dialogName(dialog dialogMode) string {
 			return "swarm attach"
 		}
 		return "swarm dashboard"
+	case dialogCommand:
+		return "command"
 	default:
 		return "chat"
 	}
@@ -841,9 +899,12 @@ func (m bubbleModel) writeCurrentModeHelp(b *strings.Builder) {
 		b.WriteString("  esc/ctrl+t    close tree browser\n\n")
 	case dialogSwarm:
 		m.writeSwarmHelp(b)
+	case dialogCommand:
+		b.WriteString("  enter/esc     close command output\n\n")
 	default:
 		b.WriteString("  type prompt   compose in input box\n")
-		b.WriteString("  ctrl+s        submit prompt\n")
+		b.WriteString("  enter         submit prompt\n")
+		b.WriteString("  shift+enter   insert newline\n")
 		b.WriteString("  /             show command suggestions\n")
 		for _, cmd := range slashCommands() {
 			fmt.Fprintf(b, "  %-13s %s\n", cmd.Usage, cmd.Description)
@@ -857,7 +918,15 @@ func (m bubbleModel) handleCommandPopupKey(key tea.KeyPressMsg) (bubbleModel, te
 		return m, nil, false
 	}
 	switch key.String() {
-	case "tab", "enter":
+	case "tab":
+		m.acceptCommandSuggestion()
+		return m, nil, true
+	case "enter":
+		if exactSlashCommand(m.input.Value()) {
+			m.clearCommandSuggestions()
+			updated, cmd := m.submit()
+			return updated, cmd, true
+		}
 		m.acceptCommandSuggestion()
 		return m, nil, true
 	case "down":
@@ -874,6 +943,24 @@ func (m bubbleModel) handleCommandPopupKey(key tea.KeyPressMsg) (bubbleModel, te
 		return m, nil, true
 	}
 	return m, nil, false
+}
+
+func isMultilineInputKey(msg tea.KeyPressMsg) bool {
+	key := msg.Key()
+	return key.Code == tea.KeyEnter && (key.Mod&tea.ModShift != 0 || key.Mod&tea.ModCtrl != 0)
+}
+
+func exactSlashCommand(value string) bool {
+	name := strings.TrimSpace(value)
+	if name == "" {
+		return false
+	}
+	for _, cmd := range slashCommands() {
+		if name == cmd.Name {
+			return true
+		}
+	}
+	return false
 }
 
 func (m *bubbleModel) updateCommandSuggestions() {
@@ -1402,12 +1489,16 @@ func (m *bubbleModel) openSwarmDialog() (bubbleModel, tea.Cmd) {
 
 func (m bubbleModel) updateSwarmDialog(key tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 	if m.swarmPromptMode != "" {
+		if isMultilineInputKey(key) {
+			m.input.InsertString("\n")
+			return m, nil
+		}
 		switch key.String() {
 		case "esc":
 			m.swarmPromptMode = ""
 			m.input.Reset()
 			return m, nil
-		case "ctrl+s", "enter":
+		case "enter":
 			return m.submitSwarmPrompt()
 		}
 		var cmd tea.Cmd
@@ -1628,9 +1719,9 @@ func (m bubbleModel) swarmDialogView() string {
 	var b strings.Builder
 	switch m.swarmPromptMode {
 	case "send":
-		b.WriteString("Swarm dashboard — type prompt for selected agent · ctrl+s/enter send · esc cancel\n")
+		b.WriteString("Swarm dashboard — type prompt for selected agent · enter send · shift+enter newline · esc cancel\n")
 	case "spawn":
-		b.WriteString("Swarm dashboard — type task for new agent · ctrl+s/enter spawn · esc cancel\n")
+		b.WriteString("Swarm dashboard — type task for new agent · enter spawn · shift+enter newline · esc cancel\n")
 	default:
 		b.WriteString("Swarm dashboard — ↑/↓ server · tab agent · a attach · n spawn · s send · x stop · l logs · enter refresh · r reload · esc close\n")
 	}
@@ -1713,7 +1804,38 @@ func (m *bubbleModel) runCommand(line string) tea.Cmd {
 		if !handled {
 			err = fmt.Errorf("unknown command %q", line)
 		}
-		return commandDoneMsg{text: strings.TrimSpace(buf.String()), err: err}
+		return commandDoneMsg{title: commandDialogTitle(line), text: strings.TrimSpace(buf.String()), err: err}
+	}
+}
+
+func commandDialogTitle(line string) string {
+	fields := strings.Fields(line)
+	if len(fields) == 0 {
+		return "Command"
+	}
+	switch fields[0] {
+	case "/status", "/state":
+		return "Status"
+	case "/model":
+		return "Model"
+	case "/messages", "/transcript":
+		return "Messages"
+	case "/tree":
+		return "Session Tree"
+	case "/sessions":
+		return "Sessions"
+	case "/compact":
+		return "Compaction"
+	case "/open":
+		return "Session"
+	case "/move":
+		return "Session Tree"
+	case "/branch":
+		return "Branch"
+	case "/help":
+		return "Commands"
+	default:
+		return "Command"
 	}
 }
 

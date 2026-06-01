@@ -249,6 +249,200 @@ func TestSlashHelpCommandStillRunsFullScreen(t *testing.T) {
 	}
 }
 
+func TestBubbleHeaderOwnsHelpHintAndInputHasNoCommandBars(t *testing.T) {
+	ctx := context.Background()
+	h, err := harness.New(ctx, harness.Config{
+		Session: memory.New("tui-help-hint-test"),
+		Model:   model.Model{Provider: "fake", ID: "echo"},
+		Stream: func(ctx context.Context, req provider.Request) (<-chan provider.Event, error) {
+			return streamText("ok"), nil
+		},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	updated, _ := newBubbleModel(ctx, &App{Harness: h}).Update(tea.WindowSizeMsg{Width: 100, Height: 24})
+	m := updated.(bubbleModel)
+	view := m.View().Content
+	if !strings.Contains(m.headerView(), "? for help") {
+		t.Fatalf("header = %q", m.headerView())
+	}
+	for _, unwanted := range []string{"ctrl+s submit", "/help commands", "PgUp/PgDn scroll"} {
+		if strings.Contains(view, unwanted) {
+			t.Fatalf("view still contains command bar text %q:\n%s", unwanted, view)
+		}
+	}
+	for _, unwanted := range []string{"ctrl+o sessions", "ctrl+p model", "ctrl+t tree", "ctrl+w swarm"} {
+		if strings.Contains(m.input.View(), unwanted) {
+			t.Fatalf("input view still contains shortcut placeholder text %q: %q", unwanted, m.input.View())
+		}
+	}
+}
+
+func TestBubbleDialogRendersAboveInput(t *testing.T) {
+	ctx := context.Background()
+	h, err := harness.New(ctx, harness.Config{
+		Session: memory.New("tui-dialog-order-test"),
+		Model:   model.Model{Provider: "fake", ID: "echo"},
+		Stream: func(ctx context.Context, req provider.Request) (<-chan provider.Event, error) {
+			return streamText("ok"), nil
+		},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	updated, _ := newBubbleModel(ctx, &App{Harness: h}).Update(tea.WindowSizeMsg{Width: 100, Height: 24})
+	m := updated.(bubbleModel)
+	m.dialog = dialogHelp
+	view := m.View().Content
+	helpIndex := strings.Index(view, "Help")
+	inputPromptIndex := strings.LastIndex(view, "┃")
+	if helpIndex < 0 || inputPromptIndex < 0 {
+		t.Fatalf("view missing help or input prompt:\n%s", view)
+	}
+	if helpIndex > inputPromptIndex {
+		t.Fatalf("help rendered below input:\n%s", view)
+	}
+}
+
+func TestSlashStatusCommandOpensCommandDialog(t *testing.T) {
+	ctx := context.Background()
+	h, err := harness.New(ctx, harness.Config{
+		Session: memory.New("tui-command-dialog-test"),
+		Model:   model.Model{Provider: "fake", ID: "echo"},
+		Stream: func(ctx context.Context, req provider.Request) (<-chan provider.Event, error) {
+			return streamText("ok"), nil
+		},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	m := newBubbleModel(ctx, &App{Harness: h})
+	before := m.transcript
+	m.input.SetValue("/status")
+	submitted, cmd := m.submit()
+	if cmd == nil {
+		t.Fatal("expected /status command")
+	}
+	done, ok := cmd().(commandDoneMsg)
+	if !ok {
+		t.Fatalf("command msg = %#v", done)
+	}
+	updated, _ := submitted.Update(done)
+	got := updated.(bubbleModel)
+	if got.dialog != dialogCommand {
+		t.Fatalf("dialog = %v, want command", got.dialog)
+	}
+	if got.commandDialogTitle != "Status" {
+		t.Fatalf("command dialog title = %q, want Status", got.commandDialogTitle)
+	}
+	for _, want := range []string{"session: tui-command-dialog-test", "messages: 0", "model: fake/echo"} {
+		if !strings.Contains(got.commandDialogText, want) {
+			t.Fatalf("command dialog missing %q:\n%s", want, got.commandDialogText)
+		}
+	}
+	if got.transcript != before {
+		t.Fatalf("transcript changed after command dialog:\nbefore=%q\nafter=%q", before, got.transcript)
+	}
+}
+
+func TestEnterSubmitsPrompt(t *testing.T) {
+	ctx := context.Background()
+	h, err := harness.New(ctx, harness.Config{
+		Session: memory.New("tui-enter-submit-test"),
+		Model:   model.Model{Provider: "fake", ID: "echo"},
+		Stream: func(ctx context.Context, req provider.Request) (<-chan provider.Event, error) {
+			return streamText("ok"), nil
+		},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	m := newBubbleModel(ctx, &App{Harness: h})
+	m.input.SetValue("hello")
+	updated, cmd := m.Update(tea.KeyPressMsg(tea.Key{Code: tea.KeyEnter}))
+	got := updated.(bubbleModel)
+	if cmd == nil {
+		t.Fatal("enter did not submit prompt")
+	}
+	if !got.running || got.status != "running" {
+		t.Fatalf("state after enter = running:%v status:%q", got.running, got.status)
+	}
+	if !strings.Contains(got.transcript, "> hello") {
+		t.Fatalf("transcript after enter submit:\n%s", got.transcript)
+	}
+}
+
+func TestModifiedEnterInsertsMultilineInput(t *testing.T) {
+	ctx := context.Background()
+	h, err := harness.New(ctx, harness.Config{
+		Session: memory.New("tui-multiline-input-test"),
+		Model:   model.Model{Provider: "fake", ID: "echo"},
+		Stream: func(ctx context.Context, req provider.Request) (<-chan provider.Event, error) {
+			return streamText("ok"), nil
+		},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, tt := range []struct {
+		name string
+		mod  tea.KeyMod
+	}{
+		{name: "shift", mod: tea.ModShift},
+		{name: "ctrl", mod: tea.ModCtrl},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			m := newBubbleModel(ctx, &App{Harness: h})
+			m.input.SetValue("hello")
+			updated, cmd := m.Update(tea.KeyPressMsg(tea.Key{Code: tea.KeyEnter, Mod: tt.mod}))
+			got := updated.(bubbleModel)
+			if cmd != nil {
+				t.Fatal("modified enter submitted instead of inserting a newline")
+			}
+			if got.running {
+				t.Fatal("modified enter started runtime")
+			}
+			if got.input.Value() != "hello\n" {
+				t.Fatalf("input after modified enter = %q, want %q", got.input.Value(), "hello\n")
+			}
+		})
+	}
+}
+
+func TestEnterRunsExactSlashCommandWithPopupOpen(t *testing.T) {
+	ctx := context.Background()
+	h, err := harness.New(ctx, harness.Config{
+		Session: memory.New("tui-enter-slash-command-test"),
+		Model:   model.Model{Provider: "fake", ID: "echo"},
+		Stream: func(ctx context.Context, req provider.Request) (<-chan provider.Event, error) {
+			return streamText("ok"), nil
+		},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	m := newBubbleModel(ctx, &App{Harness: h})
+	for _, r := range "/status" {
+		updated, _ := m.Update(tea.KeyPressMsg(tea.Key{Text: string(r), Code: r}))
+		m = updated.(bubbleModel)
+	}
+	if !m.commandPopup {
+		t.Fatal("expected command popup before exact slash command submit")
+	}
+	updated, cmd := m.Update(tea.KeyPressMsg(tea.Key{Code: tea.KeyEnter}))
+	got := updated.(bubbleModel)
+	if cmd == nil {
+		t.Fatal("enter did not run exact slash command")
+	}
+	if !got.running || got.status != "command" {
+		t.Fatalf("state after slash enter = running:%v status:%q", got.running, got.status)
+	}
+	if got.commandPopup {
+		t.Fatal("command popup remained open after slash submit")
+	}
+}
+
 func TestSlashCommandSuggestionsFilterAndInsert(t *testing.T) {
 	ctx := context.Background()
 	h, err := harness.New(ctx, harness.Config{

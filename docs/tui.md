@@ -42,7 +42,9 @@ Use `--session <path>` to open a specific durable session. Use `--memory` for th
 ## Global Keys
 
 ```text
-ctrl+s      submit prompt or send dialog input
+enter       submit prompt or send dialog input
+shift+enter insert newline
+ctrl+enter  insert newline when supported by the terminal
 ctrl+f      search transcript
 ctrl+o      sessions
 ctrl+p      model and reasoning picker
@@ -73,7 +75,7 @@ Fn+Down   PageDown
 
 ## Slash Commands
 
-Type `/` in the prompt to open command suggestions. The popup filters as you type. Use `up`/`down` to select, `tab` or `enter` to insert the selected command, and `esc` to close the popup.
+Type `/` in the prompt to open command suggestions. The popup filters as you type. Use `up`/`down` to select, `tab` to insert the selected command, and `esc` to close the popup. `enter` inserts a partial suggestion, or runs the command when the prompt is an exact slash command.
 
 Commands:
 
@@ -94,7 +96,7 @@ Commands:
 /exit                  exit
 ```
 
-Slash commands run from the prompt with `ctrl+s`, just like normal prompts.
+Slash commands run from the prompt with `enter`, just like normal prompts.
 
 ## Transcript Search
 
@@ -165,7 +167,7 @@ esc             detach if attached, otherwise close
 ctrl+w          close dashboard
 ```
 
-When composing a swarm send/spawn prompt, type in the input box and press `ctrl+s` or `enter` to send. Press `esc` to cancel.
+When composing a swarm send/spawn prompt, type in the input box and press `enter` to send. Press `shift+enter` to insert a newline, or `esc` to cancel.
 
 Attach mode follows a selected agent and refreshes status/log tail every two seconds:
 
