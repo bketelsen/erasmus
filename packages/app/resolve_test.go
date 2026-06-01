@@ -97,6 +97,42 @@ func TestResolveHarnessConfigBuildsCodexStreamFromOAuth(t *testing.T) {
 	}
 }
 
+func TestResolveHarnessConfigBuildsGitHubCopilotChatStreamFromOAuth(t *testing.T) {
+	store := auth.NewMemoryStore()
+	if err := store.Set(context.Background(), auth.Credential{Provider: "github-copilot", OAuth: &auth.OAuthToken{AccessToken: "tok;proxy-ep=proxy.individual.githubcopilot.com;", RefreshToken: "github-access"}}); err != nil {
+		t.Fatal(err)
+	}
+	resolved, err := app.ResolveHarnessConfig(context.Background(), app.ResolveOptions{
+		Config:  config.Config{Provider: "github-copilot", Model: "gpt-4.1"},
+		Session: memory.New("test"),
+		Auth:    store,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if resolved.Model.Provider != "github-copilot" || resolved.Harness.Stream == nil {
+		t.Fatalf("unexpected resolved: %+v", resolved.Model)
+	}
+}
+
+func TestResolveHarnessConfigBuildsGitHubCopilotResponsesStreamFromOAuth(t *testing.T) {
+	store := auth.NewMemoryStore()
+	if err := store.Set(context.Background(), auth.Credential{Provider: "github-copilot", OAuth: &auth.OAuthToken{AccessToken: "tok;proxy-ep=proxy.individual.githubcopilot.com;", RefreshToken: "github-access"}}); err != nil {
+		t.Fatal(err)
+	}
+	resolved, err := app.ResolveHarnessConfig(context.Background(), app.ResolveOptions{
+		Config:  config.Config{Provider: "github-copilot", Model: "gpt-5.3-codex"},
+		Session: memory.New("test"),
+		Auth:    store,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if resolved.Model.Provider != "github-copilot" || resolved.Harness.Stream == nil {
+		t.Fatalf("unexpected resolved: %+v", resolved.Model)
+	}
+}
+
 func TestResolveHarnessConfigAllowsExplicitProviderModelOutsideStaticCatalog(t *testing.T) {
 	resolved, err := app.ResolveHarnessConfig(context.Background(), app.ResolveOptions{
 		Config:  config.Config{Provider: "openai-codex", Model: "future-codex-model"},
@@ -107,6 +143,20 @@ func TestResolveHarnessConfigAllowsExplicitProviderModelOutsideStaticCatalog(t *
 		t.Fatal(err)
 	}
 	if resolved.Model.Provider != "openai-codex" || resolved.Model.ID != "future-codex-model" || resolved.Model.Source != "explicit" {
+		t.Fatalf("model = %+v", resolved.Model)
+	}
+}
+
+func TestResolveHarnessConfigAllowsExplicitGitHubCopilotModelOutsideStaticCatalog(t *testing.T) {
+	resolved, err := app.ResolveHarnessConfig(context.Background(), app.ResolveOptions{
+		Config:  config.Config{Provider: "github-copilot", Model: "future-copilot-model"},
+		Session: memory.New("test"),
+		Stream:  noopStream,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if resolved.Model.Provider != "github-copilot" || resolved.Model.ID != "future-copilot-model" || resolved.Model.Source != "explicit" {
 		t.Fatalf("model = %+v", resolved.Model)
 	}
 }

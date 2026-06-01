@@ -1,0 +1,151 @@
+package githubcopilot
+
+import (
+	"context"
+	"encoding/json"
+	"net/http"
+	"net/http/httptest"
+	"testing"
+
+	"erasmus/packages/auth"
+	"erasmus/packages/message"
+	"erasmus/packages/model"
+	"erasmus/packages/provider"
+)
+
+func TestChatCompletionsStreamUsesCopilotHeaders(t *testing.T) {
+	var gotReq struct {
+		Model    string `json:"model"`
+		Messages []struct {
+			Role    string `json:"role"`
+			Content string `json:"content"`
+		} `json:"messages"`
+		Stream bool `json:"stream"`
+	}
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/chat/completions" {
+			t.Fatalf("path = %s", r.URL.Path)
+		}
+		if got := r.Header.Get("Authorization"); got != "Bearer copilot-token" {
+			t.Fatalf("authorization = %q", got)
+		}
+		for name, want := range auth.GitHubCopilotStaticHeaders() {
+			if got := r.Header.Get(name); got != want {
+				t.Fatalf("%s = %q, want %q", name, got, want)
+			}
+		}
+		if err := json.NewDecoder(r.Body).Decode(&gotReq); err != nil {
+			t.Fatal(err)
+		}
+		w.Header().Set("Content-Type", "text/event-stream")
+		_, _ = w.Write([]byte("data: {\"id\":\"copilot-1\",\"choices\":[{\"delta\":{\"content\":\"ok\"},\"finish_reason\":\"stop\"}]}\n\n"))
+		_, _ = w.Write([]byte("data: [DONE]\n\n"))
+	}))
+	defer server.Close()
+
+	client, err := NewChatCompletions(Config{AccessToken: "copilot-token", BaseURL: server.URL, HTTPClient: server.Client()})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if client.Name() != "github-copilot" {
+		t.Fatalf("name = %q", client.Name())
+	}
+	events, err := client.Stream(context.Background(), provider.Request{
+		Model:    model.Model{Provider: "github-copilot", ID: "gpt-4.1"},
+		Messages: []message.Message{{Role: message.RoleUser, Content: []message.Content{message.Text{Text: "hello"}}}},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	var text string
+	for ev := range events {
+		switch e := ev.(type) {
+		case provider.TextDelta:
+			text += e.Text
+		case provider.Error:
+			t.Fatalf("provider error: %s", e.Err)
+		}
+	}
+	if gotReq.Model != "gpt-4.1" || !gotReq.Stream || len(gotReq.Messages) != 1 || gotReq.Messages[0].Content != "hello" || text != "ok" {
+		t.Fatalf("request=%+v text=%q", gotReq, text)
+	}
+}
+
+func TestResponsesStreamUsesCopilotHeaders(t *testing.T) {
+	var gotReq struct {
+		Model        string `json:"model"`
+		Instructions string `json:"instructions"`
+		Stream       bool   `json:"stream"`
+	}
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/responses" {
+			t.Fatalf("path = %s", r.URL.Path)
+		}
+		if got := r.Header.Get("Authorization"); got != "Bearer copilot-token" {
+			t.Fatalf("authorization = %q", got)
+		}
+		if got := r.Header.Get("chatgpt-account-id"); got != "" {
+			t.Fatalf("chatgpt-account-id = %q", got)
+		}
+		if got := r.Header.Get("openai-beta"); got != "" {
+			t.Fatalf("openai-beta = %q", got)
+		}
+		for name, want := range auth.GitHubCopilotStaticHeaders() {
+			if got := r.Header.Get(name); got != want {
+				t.Fatalf("%s = %q, want %q", name, got, want)
+			}
+		}
+		if err := json.NewDecoder(r.Body).Decode(&gotReq); err != nil {
+			t.Fatal(err)
+		}
+		w.Header().Set("Content-Type", "text/event-stream")
+		_, _ = w.Write([]byte("data: {\"type\":\"response.output_item.added\",\"output_index\":0}\n\n"))
+		_, _ = w.Write([]byte("data: {\"type\":\"response.output_text.delta\",\"output_index\":0,\"delta\":\"hel\"}\n\n"))
+		_, _ = w.Write([]byte("data: {\"type\":\"response.output_text.delta\",\"output_index\":0,\"delta\":\"lo\"}\n\n"))
+		_, _ = w.Write([]byte("data: {\"type\":\"response.completed\",\"response\":{\"usage\":{\"input_tokens\":4,\"output_tokens\":2}}}\n\n"))
+	}))
+	defer server.Close()
+
+	client, err := NewResponses(Config{AccessToken: "copilot-token", BaseURL: server.URL, HTTPClient: server.Client()})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if client.Name() != "github-copilot" {
+		t.Fatalf("name = %q", client.Name())
+	}
+	events, err := client.Stream(context.Background(), provider.Request{
+		Model:    model.Model{Provider: "github-copilot", ID: "gpt-5.3-codex"},
+		System:   "sys",
+		Messages: []message.Message{{Role: message.RoleUser, Content: []message.Content{message.Text{Text: "hello"}}}},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	var text string
+	var usage bool
+	for ev := range events {
+		switch e := ev.(type) {
+		case provider.TextDelta:
+			text += e.Text
+		case provider.Usage:
+			usage = e.Usage.InputTokens == 4 && e.Usage.OutputTokens == 2
+		case provider.Error:
+			t.Fatalf("provider error: %s", e.Err)
+		}
+	}
+	if gotReq.Model != "gpt-5.3-codex" || gotReq.Instructions != "sys" || !gotReq.Stream || text != "hello" || !usage {
+		t.Fatalf("request=%+v text=%q usage=%v", gotReq, text, usage)
+	}
+}
+
+func TestNewChatCompletionsRequiresAccessToken(t *testing.T) {
+	if _, err := NewChatCompletions(Config{}); err == nil {
+		t.Fatal("expected access token error")
+	}
+}
+
+func TestNewResponsesRequiresAccessToken(t *testing.T) {
+	if _, err := NewResponses(Config{}); err == nil {
+		t.Fatal("expected access token error")
+	}
+}

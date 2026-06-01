@@ -23,14 +23,18 @@ const defaultBaseURL = "https://api.openai.com/v1"
 type Config struct {
 	APIKey     string
 	BaseURL    string
+	Headers    map[string]string
+	Provider   string
 	HTTPClient *http.Client
 }
 
 // Client streams OpenAI-compatible chat completions.
 type Client struct {
-	apiKey string
-	base   string
-	http   *http.Client
+	apiKey   string
+	base     string
+	headers  map[string]string
+	provider string
+	http     *http.Client
 }
 
 // New creates an OpenAI-compatible provider client.
@@ -46,11 +50,19 @@ func New(cfg Config) (*Client, error) {
 	if hc == nil {
 		hc = http.DefaultClient
 	}
-	return &Client{apiKey: cfg.APIKey, base: base, http: hc}, nil
+	provider := cfg.Provider
+	if provider == "" {
+		provider = "openai"
+	}
+	headers := make(map[string]string, len(cfg.Headers))
+	for k, v := range cfg.Headers {
+		headers[k] = v
+	}
+	return &Client{apiKey: cfg.APIKey, base: base, headers: headers, provider: provider, http: hc}, nil
 }
 
 // Name returns the provider name.
-func (c *Client) Name() string { return "openai" }
+func (c *Client) Name() string { return c.provider }
 
 // DiscoverModels lists models currently reported by the OpenAI models endpoint.
 func (c *Client) DiscoverModels(ctx context.Context, provider string) ([]model.Model, error) {
@@ -62,6 +74,7 @@ func (c *Client) DiscoverModels(ctx context.Context, provider string) ([]model.M
 		return nil, err
 	}
 	hreq.Header.Set("Authorization", "Bearer "+c.apiKey)
+	c.setHeaders(hreq)
 	resp, err := c.http.Do(hreq)
 	if err != nil {
 		return nil, err
@@ -103,6 +116,7 @@ func (c *Client) Stream(ctx context.Context, req provider.Request) (<-chan provi
 	hreq.Header.Set("Authorization", "Bearer "+c.apiKey)
 	hreq.Header.Set("Content-Type", "application/json")
 	hreq.Header.Set("Accept", "text/event-stream")
+	c.setHeaders(hreq)
 	resp, err := c.http.Do(hreq)
 	if err != nil {
 		return nil, err
@@ -235,6 +249,12 @@ func textContent(parts []message.Content) string {
 		}
 	}
 	return strings.Join(out, "\n")
+}
+
+func (c *Client) setHeaders(req *http.Request) {
+	for k, v := range c.headers {
+		req.Header.Set(k, v)
+	}
 }
 
 type streamChunk struct {

@@ -21,20 +21,27 @@ const defaultBaseURL = "https://chatgpt.com/backend-api/codex/responses"
 
 // Config configures the Codex subscription client.
 type Config struct {
-	AccessToken string
-	AccountID   string
-	BaseURL     string
-	HTTPClient  *http.Client
-	Originator  string
+	AccessToken           string
+	AccountID             string
+	BaseURL               string
+	HTTPClient            *http.Client
+	Originator            string
+	Provider              string
+	Headers               map[string]string
+	AllowMissingAccountID bool
+	DisableCodexHeaders   bool
 }
 
 // Client streams ChatGPT Codex responses.
 type Client struct {
-	token      string
-	accountID  string
-	baseURL    string
-	originator string
-	http       *http.Client
+	token               string
+	accountID           string
+	baseURL             string
+	originator          string
+	provider            string
+	headers             map[string]string
+	disableCodexHeaders bool
+	http                *http.Client
 }
 
 // New creates a Codex subscription client.
@@ -42,7 +49,7 @@ func New(cfg Config) (*Client, error) {
 	if strings.TrimSpace(cfg.AccessToken) == "" {
 		return nil, fmt.Errorf("openai-codex access token is required")
 	}
-	if strings.TrimSpace(cfg.AccountID) == "" {
+	if strings.TrimSpace(cfg.AccountID) == "" && !cfg.AllowMissingAccountID {
 		return nil, fmt.Errorf("openai-codex account id is required")
 	}
 	base := cfg.BaseURL
@@ -57,11 +64,19 @@ func New(cfg Config) (*Client, error) {
 	if hc == nil {
 		hc = http.DefaultClient
 	}
-	return &Client{token: cfg.AccessToken, accountID: cfg.AccountID, baseURL: base, originator: originator, http: hc}, nil
+	provider := cfg.Provider
+	if provider == "" {
+		provider = "openai-codex"
+	}
+	headers := make(map[string]string, len(cfg.Headers))
+	for k, v := range cfg.Headers {
+		headers[k] = v
+	}
+	return &Client{token: cfg.AccessToken, accountID: cfg.AccountID, baseURL: base, originator: originator, provider: provider, headers: headers, disableCodexHeaders: cfg.DisableCodexHeaders, http: hc}, nil
 }
 
 // Name returns provider name.
-func (c *Client) Name() string { return "openai-codex" }
+func (c *Client) Name() string { return c.provider }
 
 // Stream sends a Responses-style request to ChatGPT Codex and normalizes SSE events.
 func (c *Client) Stream(ctx context.Context, req provider.Request) (<-chan provider.Event, error) {
@@ -76,10 +91,17 @@ func (c *Client) Stream(ctx context.Context, req provider.Request) (<-chan provi
 	hreq.Header.Set("content-type", "application/json")
 	hreq.Header.Set("accept", "text/event-stream")
 	hreq.Header.Set("authorization", "Bearer "+c.token)
-	hreq.Header.Set("chatgpt-account-id", c.accountID)
-	hreq.Header.Set("openai-beta", "responses=experimental")
-	hreq.Header.Set("originator", c.originator)
-	hreq.Header.Set("user-agent", fmt.Sprintf("erasmus (%s %s)", runtime.GOOS, runtime.GOARCH))
+	if c.accountID != "" {
+		hreq.Header.Set("chatgpt-account-id", c.accountID)
+	}
+	if !c.disableCodexHeaders {
+		hreq.Header.Set("openai-beta", "responses=experimental")
+		hreq.Header.Set("originator", c.originator)
+		hreq.Header.Set("user-agent", fmt.Sprintf("erasmus (%s %s)", runtime.GOOS, runtime.GOARCH))
+	}
+	for k, v := range c.headers {
+		hreq.Header.Set(k, v)
+	}
 	resp, err := c.http.Do(hreq)
 	if err != nil {
 		return nil, err

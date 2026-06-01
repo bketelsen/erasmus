@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"os"
+	"strings"
 
 	"erasmus/packages/auth"
 	"erasmus/packages/config"
@@ -12,6 +13,7 @@ import (
 	"erasmus/packages/model"
 	"erasmus/packages/prompt"
 	"erasmus/packages/provider"
+	"erasmus/packages/provider/githubcopilot"
 	"erasmus/packages/provider/openai"
 	"erasmus/packages/provider/openaicodex"
 	"erasmus/packages/sandbox"
@@ -119,9 +121,44 @@ func resolveStream(ctx context.Context, m model.Model, store auth.Store) (provid
 			return nil, err
 		}
 		return client.Stream, nil
+	case "github-copilot":
+		cred, err := credentialForProvider(ctx, store, m.Provider)
+		if err != nil {
+			return nil, err
+		}
+		if cred.OAuth == nil {
+			return nil, fmt.Errorf("github-copilot requires OAuth credentials")
+		}
+		switch {
+		case githubCopilotUsesChatCompletions(m.ID):
+			baseURL := auth.GitHubCopilotBaseURLFromToken(cred.OAuth.AccessToken)
+			client, err := githubcopilot.NewChatCompletions(githubcopilot.Config{AccessToken: cred.OAuth.AccessToken, BaseURL: baseURL})
+			if err != nil {
+				return nil, err
+			}
+			return client.Stream, nil
+		case githubCopilotUsesResponses(m.ID):
+			baseURL := auth.GitHubCopilotBaseURLFromToken(cred.OAuth.AccessToken)
+			client, err := githubcopilot.NewResponses(githubcopilot.Config{AccessToken: cred.OAuth.AccessToken, BaseURL: baseURL})
+			if err != nil {
+				return nil, err
+			}
+			return client.Stream, nil
+		default:
+			return nil, fmt.Errorf("github-copilot model %q is not wired yet", m.ID)
+		}
 	default:
 		return nil, fmt.Errorf("provider %q is not wired", m.Provider)
 	}
+}
+
+func githubCopilotUsesChatCompletions(modelID string) bool {
+	id := strings.ToLower(modelID)
+	return !strings.HasPrefix(id, "gpt-5") && !strings.HasPrefix(id, "claude-")
+}
+
+func githubCopilotUsesResponses(modelID string) bool {
+	return strings.HasPrefix(strings.ToLower(modelID), "gpt-5")
 }
 
 func refreshOpenAICodexCredential(ctx context.Context, store auth.Store, cred auth.Credential) (auth.Credential, error) {
@@ -184,7 +221,7 @@ func resolveModel(catalog model.Catalog, providerID, modelID string) (model.Mode
 
 func allowsExplicitModelID(providerID string) bool {
 	switch providerID {
-	case "openai", "openai-codex":
+	case "openai", "openai-codex", "github-copilot":
 		return true
 	default:
 		return false
