@@ -23,6 +23,8 @@ import (
 	"erasmus/packages/tools"
 )
 
+var gitHubCopilotDeviceProvider = auth.DefaultGitHubCopilotDeviceProvider
+
 // ResolveOptions controls app config resolution.
 type ResolveOptions struct {
 	Config     config.Config
@@ -129,6 +131,12 @@ func resolveStream(ctx context.Context, m model.Model, store auth.Store) (provid
 		if cred.OAuth == nil {
 			return nil, fmt.Errorf("github-copilot requires OAuth credentials")
 		}
+		if cred.OAuth.Expired() {
+			cred, err = refreshGitHubCopilotCredential(ctx, store, cred)
+			if err != nil {
+				return nil, err
+			}
+		}
 		switch {
 		case githubCopilotUsesChatCompletions(m.ID):
 			baseURL := auth.GitHubCopilotBaseURLFromToken(cred.OAuth.AccessToken)
@@ -188,6 +196,24 @@ func refreshOpenAICodexCredential(ctx context.Context, store auth.Store, cred au
 	}
 	if tok.IDToken == "" {
 		tok.IDToken = cred.OAuth.IDToken
+	}
+	cred.OAuth = tok
+	if err := store.Set(ctx, cred); err != nil {
+		return auth.Credential{}, err
+	}
+	return cred, nil
+}
+
+func refreshGitHubCopilotCredential(ctx context.Context, store auth.Store, cred auth.Credential) (auth.Credential, error) {
+	if cred.OAuth.RefreshToken == "" {
+		return auth.Credential{}, fmt.Errorf("github-copilot OAuth token is expired and has no GitHub access token")
+	}
+	tok, err := gitHubCopilotDeviceProvider().Refresh(ctx, cred.OAuth.RefreshToken)
+	if err != nil {
+		return auth.Credential{}, err
+	}
+	if tok.RefreshToken == "" {
+		tok.RefreshToken = cred.OAuth.RefreshToken
 	}
 	cred.OAuth = tok
 	if err := store.Set(ctx, cred); err != nil {

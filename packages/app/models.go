@@ -130,6 +130,12 @@ func discoverProviderModels(ctx context.Context, provider string, store auth.Sto
 		if cred.OAuth == nil {
 			return nil, fmt.Errorf("github-copilot requires OAuth credentials")
 		}
+		if cred.OAuth.Expired() {
+			cred, err = refreshGitHubCopilotCredential(ctx, store, cred)
+			if err != nil {
+				return nil, err
+			}
+		}
 		baseURL := auth.GitHubCopilotBaseURLFromToken(cred.OAuth.AccessToken)
 		client, err := githubcopilot.NewChatCompletions(githubcopilot.Config{AccessToken: cred.OAuth.AccessToken, BaseURL: baseURL})
 		if err != nil {
