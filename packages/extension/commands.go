@@ -52,9 +52,11 @@ func (c *command) Execute(ctx context.Context, input json.RawMessage) (proto.Com
 // RegisterCommand registers a command.
 func (m *Manager) RegisterCommand(reg proto.RegisterCommand, caller CommandCaller) Command {
 	m.mu.Lock()
-	defer m.mu.Unlock()
 	cmd := NewCommand(reg, caller)
 	m.commands[reg.Name] = cmd
+	update := m.extensionUpdateLocked("register_command")
+	m.mu.Unlock()
+	m.publish(update)
 	return cmd
 }
 

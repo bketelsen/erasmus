@@ -384,7 +384,7 @@ func (s *MultiServer) handle(ctx context.Context, req Request, write func(any) e
 		if err != nil {
 			return write(Response{ID: req.ID, Error: err.Error()})
 		}
-		entryID, err := rt.Harness.Session().AppendCustom(ctx, "checkpoint", map[string]any{"label": params.Label, "data": params.Data})
+		entryID, err := rt.Harness.SavePoint(ctx, params.Label, params.Data)
 		if err != nil {
 			return write(Response{ID: req.ID, Error: err.Error()})
 		}

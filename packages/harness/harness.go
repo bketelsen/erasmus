@@ -469,6 +469,20 @@ func (h *Harness) Compact(ctx context.Context, opts compact.Options) (compact.Re
 	return result, nil
 }
 
+// SavePoint appends a durable checkpoint marker and publishes a save-point event.
+func (h *Harness) SavePoint(ctx context.Context, label string, data any) (session.EntryID, error) {
+	payload := map[string]any{"label": label}
+	if data != nil {
+		payload["data"] = data
+	}
+	entryID, err := h.session.AppendCustom(ctx, "checkpoint", payload)
+	if err != nil {
+		return "", err
+	}
+	h.publish(event.SavePoint{EntryID: string(entryID), Label: label})
+	return entryID, nil
+}
+
 // SetModel updates the runtime model and persists the change.
 func (h *Harness) SetModel(ctx context.Context, m model.Model) error {
 	if err := ctx.Err(); err != nil {

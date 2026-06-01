@@ -49,6 +49,29 @@ type QueueUpdate struct {
 
 func (QueueUpdate) Type() string { return "queue_update" }
 
+// SavePoint reports a persisted checkpoint marker.
+type SavePoint struct {
+	EntryID string `json:"entry_id,omitempty"`
+	Label   string `json:"label,omitempty"`
+}
+
+func (SavePoint) Type() string { return "save_point" }
+
+// ExtensionCommand reports a registered extension command.
+type ExtensionCommand struct {
+	Name        string `json:"name"`
+	Description string `json:"description,omitempty"`
+}
+
+// ExtensionUpdate reports extension registration changes.
+type ExtensionUpdate struct {
+	Action   string             `json:"action,omitempty"`
+	Tools    []tool.Spec        `json:"tools,omitempty"`
+	Commands []ExtensionCommand `json:"commands,omitempty"`
+}
+
+func (ExtensionUpdate) Type() string { return "extension_update" }
+
 // TurnStart marks the beginning of a provider/tool turn.
 type TurnStart struct {
 	Step int `json:"step"`
