@@ -38,6 +38,7 @@ This file is the project-level map for contributors and coding agents. More spec
 - The Makefile auto-detects Linuxbrew Go under `/home/linuxbrew/.linuxbrew/bin` and uses `/tmp` caches for sandbox-friendly runs.
 - `make test`, `make smoke`, and `make ci` may need local socket permission because httptest and swarm tests open localhost listeners.
 - `docs/prerelease/` is intentionally ignored; it contains early planning notes and is not meant for the eventual repository.
+- `docs/extensions.md` documents the public extension protocol, Go SDK, CLI commands, diagnostics, and current gaps.
 - Default user config/auth/session/swarm storage is XDG-compliant unless env vars or root flags override it.
 
 ## Editing Rules

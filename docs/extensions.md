@@ -1,0 +1,129 @@
+# Erasmus Extensions
+
+Erasmus extensions are headless subprocesses that speak newline-delimited JSON over stdin/stdout. They can register tools for agent runs and commands for explicit host actions.
+
+The canonical wire types live in `packages/extension/proto`. The optional Go authoring helpers live in `packages/extension/sdk`.
+
+## Protocol
+
+Every stdout line from an extension must be one JSON frame:
+
+```json
+{"type":"hello","data":{"name":"demo","version":"v0"}}
+{"type":"register_tool","data":{"name":"echo","description":"Echo text"}}
+{"type":"register_command","data":{"name":"hello","description":"Print a greeting"}}
+```
+
+The host calls tools and commands by writing frames to the extension stdin:
+
+```json
+{"type":"tool_call","id":"echo-1","data":{"id":"echo-1","name":"echo","args":{"text":"hi"}}}
+{"type":"command_call","id":"hello-1","data":{"id":"hello-1","name":"hello","input":{"text":"Ada"}}}
+```
+
+The extension answers with matching result frames:
+
+```json
+{"type":"tool_result","id":"echo-1","data":{"id":"echo-1","result":{"content":[{"text":"hi"}]}}}
+{"type":"command_result","id":"hello-1","data":{"id":"hello-1","actions":[{"type":"print","data":{"text":"hello Ada"}}]}}
+```
+
+Tool result `content` uses Erasmus canonical message content. Text parts are encoded as `{"text":"..."}`.
+
+## Raw Example
+
+A minimal shell extension can register a tool:
+
+```sh
+#!/usr/bin/env sh
+printf '%s\n' '{"type":"hello","data":{"name":"shell-demo"}}'
+printf '%s\n' '{"type":"register_tool","data":{"name":"shell_echo","description":"Echo from shell"}}'
+while IFS= read -r line; do
+  case "$line" in
+    *tool_call*)
+      printf '%s\n' '{"type":"tool_result","id":"shell_echo-1","data":{"result":{"content":[{"text":"shell extension result"}]}}}'
+      ;;
+  esac
+done
+```
+
+For real extensions, preserve the incoming frame `id` in the result.
+
+## Go SDK
+
+Use `packages/extension/sdk` when writing Go extensions:
+
+```go
+package main
+
+import (
+	"context"
+	"encoding/json"
+	"log"
+
+	"erasmus/packages/extension/sdk"
+)
+
+func main() {
+	err := sdk.Run(context.Background(), sdk.Extension{
+		Name: "go-demo",
+		Tools: []sdk.Tool{{
+			Name:        "echo_go",
+			Description: "Echo text",
+			Handler: func(ctx context.Context, args json.RawMessage) (sdk.ToolResult, error) {
+				return sdk.TextResult(string(args)), nil
+			},
+		}},
+	})
+	if err != nil {
+		log.Fatal(err)
+	}
+}
+```
+
+See `examples/extension-go` for a complete Go module with one tool, one command, and tests.
+
+## CLI
+
+Inspect an extension process:
+
+```sh
+erasmus extension list <command> [args...]
+```
+
+Execute an extension command:
+
+```sh
+erasmus extension exec <process> [process-args...] -- <command> [input]
+```
+
+`input` is passed as JSON when valid JSON is supplied. Plain text is wrapped as:
+
+```json
+{"text":"..."}
+```
+
+Configure extension subprocesses for normal runs:
+
+```sh
+erasmus config set extension /path/to/extension
+erasmus config set extensions /path/one,/path/two
+```
+
+Configured extension tools are merged into harness tool registries for `run`, TUI, RPC, and swarm paths.
+
+## Diagnostics
+
+Extension stderr and host-side protocol diagnostics are captured in recent in-memory diagnostics and persistent logs under the XDG state directory:
+
+```text
+$XDG_STATE_HOME/erasmus/extensions/logs/
+```
+
+Startup errors and command/tool failures include the log path when available. Invalid stdout JSON frames are treated as diagnostics, not valid protocol frames.
+
+## Current Gaps
+
+The protocol currently covers startup registration, tools, commands, command host actions, diagnostics, and configured subprocess tools.
+
+The stable protocol does not yet expose provider payload hooks, context transforms, save points, resource mutation requests, panels, skills, or background lifecycle controls. Keep extensions headless and avoid depending on a specific frontend.
