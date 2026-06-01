@@ -30,6 +30,7 @@ type Config struct {
 	Skills          []skill.Skill
 	Tools           tool.Registry
 	ActiveTools     []string
+	Hooks           Hooks
 	LoopHooks       loop.Hooks
 	ConfirmToolCall func(context.Context, loop.ToolCallContext) (bool, error)
 	MaxSteps        int
@@ -37,6 +38,24 @@ type Config struct {
 
 // PromptOptions controls prompt submission.
 type PromptOptions struct{}
+
+// Hooks customizes harness-level runtime behavior.
+type Hooks struct {
+	ToolCall func(context.Context, ToolCallContext) (ToolCallDecision, error)
+}
+
+// ToolCallContext describes a pending tool call observed by harness hooks.
+type ToolCallContext struct {
+	Call message.ToolCall
+	Tool tool.Tool
+}
+
+// ToolCallDecision may allow, deny, or patch a tool call before execution.
+type ToolCallDecision struct {
+	Deny      bool
+	Result    *tool.Result
+	Arguments []byte
+}
 
 // Resources groups runtime prompt resources that can be changed together.
 type Resources struct {
@@ -107,7 +126,7 @@ func New(ctx context.Context, cfg Config) (*Harness, error) {
 			return nil, err
 		}
 	}
-	loopHooks := withToolConfirmation(cfg.LoopHooks, cfg.ConfirmToolCall)
+	loopHooks := composeLoopHooks(cfg.LoopHooks, cfg.Hooks, cfg.ConfirmToolCall)
 	a := agent.New(agent.Config{
 		InitialState: agent.State{SystemPrompt: systemPrompt, Model: m, Reasoning: reasoning, Tools: activeTools, Messages: built.Messages},
 		LoopConfig:   loop.Config{Model: m, Reasoning: reasoning, Stream: cfg.Stream, Hooks: loopHooks, MaxSteps: cfg.MaxSteps, SessionID: cfg.Session.ID()},
@@ -117,31 +136,51 @@ func New(ctx context.Context, cfg Config) (*Harness, error) {
 	return h, nil
 }
 
-func withToolConfirmation(hooks loop.Hooks, confirm func(context.Context, loop.ToolCallContext) (bool, error)) loop.Hooks {
-	if confirm == nil {
+func composeLoopHooks(hooks loop.Hooks, harnessHooks Hooks, confirm func(context.Context, loop.ToolCallContext) (bool, error)) loop.Hooks {
+	if harnessHooks.ToolCall == nil && confirm == nil {
 		return hooks
 	}
 	previous := hooks.BeforeToolCall
 	hooks.BeforeToolCall = func(ctx context.Context, tc loop.ToolCallContext) (loop.ToolDecision, error) {
-		var prior loop.ToolDecision
+		var decision loop.ToolDecision
 		if previous != nil {
-			decision, err := previous(ctx, tc)
-			if err != nil || decision.Deny {
-				return decision, err
+			prior, err := previous(ctx, tc)
+			if err != nil || prior.Deny {
+				return prior, err
 			}
-			prior = decision
-			if len(decision.Arguments) > 0 {
-				tc.Call.Arguments = decision.Arguments
+			decision = prior
+			if len(prior.Arguments) > 0 {
+				tc.Call.Arguments = prior.Arguments
 			}
 		}
-		ok, err := confirm(ctx, tc)
-		if err != nil {
-			return loop.ToolDecision{}, err
+		if harnessHooks.ToolCall != nil {
+			next, err := harnessHooks.ToolCall(ctx, ToolCallContext{Call: tc.Call, Tool: tc.Tool})
+			if err != nil {
+				return loop.ToolDecision{}, err
+			}
+			if len(next.Arguments) > 0 {
+				decision.Arguments = next.Arguments
+				tc.Call.Arguments = next.Arguments
+			}
+			if next.Result != nil {
+				decision.Result = next.Result
+			}
+			if next.Deny {
+				decision.Deny = true
+				return decision, nil
+			}
 		}
-		if !ok {
-			return loop.ToolDecision{Deny: true}, nil
+		if confirm != nil {
+			ok, err := confirm(ctx, tc)
+			if err != nil {
+				return loop.ToolDecision{}, err
+			}
+			if !ok {
+				decision.Deny = true
+				return decision, nil
+			}
 		}
-		return prior, nil
+		return decision, nil
 	}
 	return hooks
 }
