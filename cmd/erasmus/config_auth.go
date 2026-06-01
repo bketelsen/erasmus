@@ -9,6 +9,7 @@ import (
 	"github.com/spf13/cobra"
 
 	"erasmus/packages/app"
+	"erasmus/packages/auth"
 	"erasmus/packages/config"
 )
 
@@ -26,8 +27,15 @@ func newLoginCommand() *cobra.Command {
 				fmt.Fprintln(cmd.OutOrStdout(), "saved OAuth credentials for openai-codex")
 				return nil
 			}
+			if len(args) == 1 && args[0] == "github-copilot" {
+				if err := app.LoginGitHubCopilotDevice(context.Background(), authStore(), auth.DefaultGitHubCopilotDeviceProvider(), cmd.OutOrStdout()); err != nil {
+					return err
+				}
+				fmt.Fprintln(cmd.OutOrStdout(), "saved OAuth credentials for github-copilot")
+				return nil
+			}
 			if len(args) != 2 {
-				return fmt.Errorf("usage: erasmus login <provider> <api-key>\n   or: erasmus login openai-codex")
+				return fmt.Errorf("usage: erasmus login <provider> <api-key>\n   or: erasmus login openai-codex\n   or: erasmus login github-copilot")
 			}
 			if err := app.Login(context.Background(), authStore(), args[0], args[1]); err != nil {
 				return err

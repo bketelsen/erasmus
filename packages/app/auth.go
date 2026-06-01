@@ -19,6 +19,23 @@ func LoginOpenAICodexOAuth(ctx context.Context, store auth.Store, out io.Writer)
 	return LoginOAuth(ctx, store, "openai-codex", auth.OpenAIOAuth, out)
 }
 
+// LoginGitHubCopilotDevice runs GitHub device flow and stores a Copilot OAuth credential.
+func LoginGitHubCopilotDevice(ctx context.Context, store auth.Store, provider auth.GitHubCopilotDeviceProvider, out io.Writer) error {
+	tok, err := provider.Login(ctx, func(url, instructions string) {
+		if out == nil {
+			return
+		}
+		fmt.Fprintln(out, "Open this URL in your browser:")
+		fmt.Fprintln(out, url)
+		fmt.Fprintln(out, instructions)
+		fmt.Fprintln(out, "Waiting for GitHub device authorization...")
+	})
+	if err != nil {
+		return err
+	}
+	return store.Set(ctx, auth.Credential{Provider: "github-copilot", OAuth: tok})
+}
+
 // LoginOAuth runs a provider OAuth loopback login flow and stores the token.
 func LoginOAuth(ctx context.Context, store auth.Store, providerName string, oauthProvider auth.OAuthProvider, out io.Writer) error {
 	pkce, err := auth.NewPKCE()
