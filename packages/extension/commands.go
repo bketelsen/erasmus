@@ -44,7 +44,7 @@ func (c *command) Execute(ctx context.Context, input json.RawMessage) (proto.Com
 		return proto.CommandResult{}, err
 	}
 	if res.Error != "" {
-		return res, fmt.Errorf("%s", res.Error)
+		return res, fmt.Errorf("%s%s", res.Error, formatDiagnosticsPath(callerLogPath(c.caller)))
 	}
 	return res, nil
 }

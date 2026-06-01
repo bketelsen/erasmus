@@ -111,7 +111,7 @@ func RunRPCConfigured(ctx context.Context, in io.Reader, out io.Writer, cfg conf
 				}
 				res, err := cmd.Execute(ctx, input)
 				if err != nil {
-					return nil, err
+					return nil, withExtensionLogPath(err, extensions.FirstLogPath())
 				}
 				actions := make([]rpc.ExtensionHostAction, 0, len(res.Actions))
 				for _, action := range res.Actions {

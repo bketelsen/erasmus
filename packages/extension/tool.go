@@ -49,9 +49,20 @@ func (t *Tool) Execute(ctx context.Context, args json.RawMessage, progress func(
 	}
 	if res.Error != "" {
 		res.Result.IsError = true
-		return res.Result, fmt.Errorf("%s", res.Error)
+		return res.Result, fmt.Errorf("%s%s", res.Error, formatDiagnosticsPath(callerLogPath(t.Caller)))
 	}
 	return res.Result, nil
+}
+
+type logPathProvider interface {
+	LogPath() string
+}
+
+func callerLogPath(caller any) string {
+	if withPath, ok := caller.(logPathProvider); ok {
+		return withPath.LogPath()
+	}
+	return ""
 }
 
 var _ tool.Tool = (*Tool)(nil)

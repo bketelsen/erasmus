@@ -30,8 +30,18 @@ type Process struct {
 	done     chan error
 }
 
+// ProcessOptions configures an extension subprocess host.
+type ProcessOptions struct {
+	LogPath string
+}
+
 // StartProcess starts an extension subprocess and waits briefly for registrations.
 func StartProcess(ctx context.Context, command string, args ...string) (*Process, error) {
+	return StartProcessWithOptions(ctx, command, ProcessOptions{}, args...)
+}
+
+// StartProcessWithOptions starts an extension subprocess with host options.
+func StartProcessWithOptions(ctx context.Context, command string, opts ProcessOptions, args ...string) (*Process, error) {
 	cmd := exec.CommandContext(ctx, command, args...)
 	stdin, err := cmd.StdinPipe()
 	if err != nil {
@@ -45,9 +55,14 @@ func StartProcess(ctx context.Context, command string, args ...string) (*Process
 	if err != nil {
 		return nil, err
 	}
-	p := &Process{cmd: cmd, stdin: stdin, frames: make(chan proto.Frame, 32), pendingT: map[string]chan proto.ToolResult{}, pendingC: map[string]chan proto.CommandResult{}, logs: newRingLog(80), done: make(chan error, 1)}
+	logs, err := newPersistentRingLog(80, opts.LogPath)
+	if err != nil {
+		return nil, err
+	}
+	p := &Process{cmd: cmd, stdin: stdin, frames: make(chan proto.Frame, 32), pendingT: map[string]chan proto.ToolResult{}, pendingC: map[string]chan proto.CommandResult{}, logs: logs, done: make(chan error, 1)}
 	p.manager = NewManager(p)
 	if err := cmd.Start(); err != nil {
+		_ = p.logs.Close()
 		return nil, err
 	}
 	go p.read(stdout)
@@ -58,8 +73,9 @@ func StartProcess(ctx context.Context, command string, args ...string) (*Process
 	}()
 	if err := p.collectStartup(ctx, 200*time.Millisecond); err != nil {
 		diag := p.Diagnostics()
+		logPath := p.LogPath()
 		_ = p.Close()
-		return nil, fmt.Errorf("start extension %q: %w%s", command, err, formatDiagnostics(diag))
+		return nil, fmt.Errorf("start extension %q: %w%s%s", command, err, formatDiagnostics(diag), formatDiagnosticsPath(logPath))
 	}
 	return p, nil
 }
@@ -75,6 +91,14 @@ func (p *Process) Diagnostics() []string {
 	return p.logs.Lines()
 }
 
+// LogPath returns the persistent diagnostics log path, when configured.
+func (p *Process) LogPath() string {
+	if p == nil || p.logs == nil {
+		return ""
+	}
+	return p.logs.Path()
+}
+
 // Close terminates the subprocess.
 func (p *Process) Close() error {
 	if p.stdin != nil {
@@ -86,6 +110,9 @@ func (p *Process) Close() error {
 	select {
 	case <-p.done:
 	case <-time.After(time.Second):
+	}
+	if p.logs != nil {
+		return p.logs.Close()
 	}
 	return nil
 }
@@ -105,7 +132,7 @@ func (p *Process) CallTool(ctx context.Context, call proto.ToolCall) (proto.Tool
 	case <-ctx.Done():
 		return proto.ToolResult{}, ctx.Err()
 	case err := <-p.done:
-		return proto.ToolResult{}, fmt.Errorf("extension process exited: %v%s", err, formatDiagnostics(p.Diagnostics()))
+		return proto.ToolResult{}, fmt.Errorf("extension process exited: %v%s%s", err, formatDiagnostics(p.Diagnostics()), formatDiagnosticsPath(p.LogPath()))
 	}
 }
 
@@ -124,7 +151,7 @@ func (p *Process) CallCommand(ctx context.Context, call proto.CommandCall) (prot
 	case <-ctx.Done():
 		return proto.CommandResult{}, ctx.Err()
 	case err := <-p.done:
-		return proto.CommandResult{}, fmt.Errorf("extension process exited: %v%s", err, formatDiagnostics(p.Diagnostics()))
+		return proto.CommandResult{}, fmt.Errorf("extension process exited: %v%s%s", err, formatDiagnostics(p.Diagnostics()), formatDiagnosticsPath(p.LogPath()))
 	}
 }
 
@@ -136,11 +163,11 @@ func (p *Process) read(r io.Reader) {
 		if err := json.Unmarshal(line, &frame); err == nil {
 			p.frames <- frame
 		} else if p.logs != nil {
-			p.logs.Add("stdout: invalid JSON frame: " + err.Error() + ": " + string(line))
+			p.logs.AddSource("stdout", "stdout: invalid JSON frame: "+err.Error()+": "+string(line))
 		}
 	}
 	if err := scanner.Err(); err != nil && p.logs != nil {
-		p.logs.Add("stdout: read error: " + err.Error())
+		p.logs.AddSource("stdout", "stdout: read error: "+err.Error())
 	}
 	close(p.frames)
 }
@@ -149,11 +176,11 @@ func (p *Process) readStderr(r io.Reader) {
 	scanner := bufio.NewScanner(r)
 	for scanner.Scan() {
 		if p.logs != nil {
-			p.logs.Add("stderr: " + scanner.Text())
+			p.logs.AddSource("stderr", "stderr: "+scanner.Text())
 		}
 	}
 	if err := scanner.Err(); err != nil && p.logs != nil {
-		p.logs.Add("stderr: read error: " + err.Error())
+		p.logs.AddSource("stderr", "stderr: read error: "+err.Error())
 	}
 }
 
@@ -240,6 +267,13 @@ func (p *Process) handle(frame proto.Frame) error {
 		if res.ID == "" {
 			res.ID = frame.ID
 		}
+		if p.logs != nil && (res.Error != "" || res.Result.IsError) {
+			msg := res.Error
+			if msg == "" {
+				msg = "tool result marked as error"
+			}
+			p.logs.AddSource("tool", "tool_result "+res.ID+": "+msg)
+		}
 		p.mu.Lock()
 		ch := p.pendingT[res.ID]
 		delete(p.pendingT, res.ID)
@@ -254,6 +288,9 @@ func (p *Process) handle(frame proto.Frame) error {
 		}
 		if res.ID == "" {
 			res.ID = frame.ID
+		}
+		if p.logs != nil && res.Error != "" {
+			p.logs.AddSource("command", "command_result "+res.ID+": "+res.Error)
 		}
 		p.mu.Lock()
 		ch := p.pendingC[res.ID]
