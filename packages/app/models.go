@@ -119,6 +119,8 @@ func discoverProviderModels(ctx context.Context, provider string, store auth.Sto
 			return nil, err
 		}
 		return client.DiscoverModels(ctx, "openai")
+	case "openai-codex":
+		return nil, fmt.Errorf("openai-codex model discovery is not available; use built-in catalog models or configure a user model override")
 	default:
 		return nil, fmt.Errorf("model discovery for provider %q is not implemented", provider)
 	}

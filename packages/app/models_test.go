@@ -7,6 +7,7 @@ import (
 	"testing"
 
 	"erasmus/packages/app"
+	"erasmus/packages/auth"
 	"erasmus/packages/config"
 	"erasmus/packages/model"
 )
@@ -77,6 +78,17 @@ func TestRefreshModelCacheWritesFakeProviderModels(t *testing.T) {
 func TestRefreshModelCacheOpenAIRequiresAuthStore(t *testing.T) {
 	_, err := app.RefreshModelCacheWithAuth(context.Background(), "openai", model.NewFileCache(filepath.Join(t.TempDir(), "models.json")), nil)
 	if err == nil || !strings.Contains(err.Error(), `auth store is required for provider "openai"`) {
+		t.Fatalf("err = %v", err)
+	}
+}
+
+func TestRefreshModelCacheCodexDiscoveryIsUnsupported(t *testing.T) {
+	store := auth.NewMemoryStore()
+	if err := store.Set(context.Background(), auth.Credential{Provider: "openai-codex", OAuth: &auth.OAuthToken{AccessToken: "tok", AccountID: "acct"}}); err != nil {
+		t.Fatal(err)
+	}
+	_, err := app.RefreshModelCacheWithAuth(context.Background(), "openai-codex", model.NewFileCache(filepath.Join(t.TempDir(), "models.json")), store)
+	if err == nil || !strings.Contains(err.Error(), "openai-codex model discovery is not available") {
 		t.Fatalf("err = %v", err)
 	}
 }
