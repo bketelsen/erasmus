@@ -37,6 +37,7 @@ type Config struct {
 
 // Hooks customizes low-level loop behavior.
 type Hooks struct {
+	BeforeProviderRequest func(context.Context, *provider.Request) error
 	BeforeToolCall        func(context.Context, ToolCallContext) (ToolDecision, error)
 	AfterToolCall         func(context.Context, ToolResultContext) (ToolResultPatch, error)
 	BeforeAssistantCommit func(context.Context, message.Message) (AssistantDecision, error)
@@ -116,6 +117,15 @@ func run(ctx context.Context, messages []message.Message, c Context, cfg Config,
 		}
 		if c.Tools != nil {
 			req.Tools = c.Tools.Specs()
+		}
+		if cfg.Hooks.BeforeProviderRequest != nil {
+			if err := cfg.Hooks.BeforeProviderRequest(ctx, &req); err != nil {
+				emitErr := emitEvent(emit, event.TurnEnd{Step: step, Err: err.Error()})
+				if emitErr != nil {
+					return messages, emitErr
+				}
+				return messages, err
+			}
 		}
 
 		stream, err := cfg.Stream(ctx, req)

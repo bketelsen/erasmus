@@ -310,6 +310,55 @@ func TestRunAssistantCommitHookPatchesMessage(t *testing.T) {
 	}
 }
 
+func TestRunBeforeProviderRequestHookMutatesRequest(t *testing.T) {
+	seen := false
+	stream := func(ctx context.Context, req provider.Request) (<-chan provider.Event, error) {
+		seen = true
+		if req.MaxTokens != 42 {
+			t.Fatalf("max tokens = %d, want 42", req.MaxTokens)
+		}
+		if req.Meta["source"] != "loop-hook" {
+			t.Fatalf("meta = %+v, want source loop-hook", req.Meta)
+		}
+		return streamEvents(ctx, provider.MessageStart{MessageID: "a1"}, provider.TextDelta{Text: "done"}, provider.MessageEnd{StopReason: "end_turn"}), nil
+	}
+
+	_, err := loop.Run(context.Background(), []message.Message{{Role: message.RoleUser}}, loop.Context{}, loop.Config{
+		Model:  model.Model{Provider: "fake", ID: "test"},
+		Stream: stream,
+		Hooks: loop.Hooks{BeforeProviderRequest: func(ctx context.Context, req *provider.Request) error {
+			req.MaxTokens = 42
+			req.Meta = map[string]string{"source": "loop-hook"}
+			return nil
+		}},
+	}, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !seen {
+		t.Fatal("provider stream was not called")
+	}
+}
+
+func TestRunBeforeProviderRequestHookCanReject(t *testing.T) {
+	hookErr := errors.New("request blocked")
+	stream := func(ctx context.Context, req provider.Request) (<-chan provider.Event, error) {
+		t.Fatal("provider stream should not be called")
+		return nil, nil
+	}
+
+	_, err := loop.Run(context.Background(), []message.Message{{Role: message.RoleUser}}, loop.Context{}, loop.Config{
+		Model:  model.Model{Provider: "fake", ID: "test"},
+		Stream: stream,
+		Hooks: loop.Hooks{BeforeProviderRequest: func(context.Context, *provider.Request) error {
+			return hookErr
+		}},
+	}, nil)
+	if !errors.Is(err, hookErr) {
+		t.Fatalf("err = %v, want %v", err, hookErr)
+	}
+}
+
 func TestRunStopsWhenContextCanceled(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	stream := func(ctx context.Context, req provider.Request) (<-chan provider.Event, error) {

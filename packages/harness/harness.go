@@ -216,15 +216,10 @@ func New(ctx context.Context, cfg Config) (*Harness, error) {
 }
 
 func wrapProviderStream(stream provider.StreamFunc, hooks Hooks) provider.StreamFunc {
-	if hooks.BeforeProviderRequest == nil && hooks.AfterProviderResponse == nil {
+	if hooks.AfterProviderResponse == nil {
 		return stream
 	}
 	return func(ctx context.Context, req provider.Request) (<-chan provider.Event, error) {
-		if hooks.BeforeProviderRequest != nil {
-			if err := hooks.BeforeProviderRequest(ctx, &req); err != nil {
-				return nil, err
-			}
-		}
 		events, err := stream(ctx, req)
 		if err != nil || hooks.AfterProviderResponse == nil {
 			return events, err
@@ -253,8 +248,19 @@ func wrapProviderStream(stream provider.StreamFunc, hooks Hooks) provider.Stream
 }
 
 func composeLoopHooks(hooks loop.Hooks, harnessHooks Hooks, confirm func(context.Context, loop.ToolCallContext) (bool, error)) loop.Hooks {
-	if harnessHooks.ToolCall == nil && harnessHooks.ToolResult == nil && harnessHooks.BeforeAssistantCommit == nil && confirm == nil {
+	if harnessHooks.BeforeProviderRequest == nil && harnessHooks.ToolCall == nil && harnessHooks.ToolResult == nil && harnessHooks.BeforeAssistantCommit == nil && confirm == nil {
 		return hooks
+	}
+	previousProviderRequest := hooks.BeforeProviderRequest
+	if harnessHooks.BeforeProviderRequest != nil {
+		hooks.BeforeProviderRequest = func(ctx context.Context, req *provider.Request) error {
+			if previousProviderRequest != nil {
+				if err := previousProviderRequest(ctx, req); err != nil {
+					return err
+				}
+			}
+			return harnessHooks.BeforeProviderRequest(ctx, req)
+		}
 	}
 	previous := hooks.BeforeToolCall
 	if harnessHooks.ToolCall != nil || confirm != nil {
