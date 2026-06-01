@@ -277,6 +277,39 @@ func TestRunToolHookCanDeny(t *testing.T) {
 	}
 }
 
+func TestRunAssistantCommitHookPatchesMessage(t *testing.T) {
+	stream := func(ctx context.Context, req provider.Request) (<-chan provider.Event, error) {
+		return streamEvents(ctx, provider.MessageStart{MessageID: "a1"}, provider.TextDelta{Text: "original"}, provider.MessageEnd{StopReason: "end_turn"}), nil
+	}
+
+	var ended message.Message
+	messages, err := loop.Run(context.Background(), []message.Message{{Role: message.RoleUser}}, loop.Context{}, loop.Config{
+		Model:  model.Model{Provider: "fake", ID: "test"},
+		Stream: stream,
+		Hooks: loop.Hooks{BeforeAssistantCommit: func(ctx context.Context, msg message.Message) (loop.AssistantDecision, error) {
+			if got := msg.Content[0].(message.Text).Text; got != "original" {
+				t.Fatalf("assistant = %q, want original", got)
+			}
+			msg.Content = []message.Content{message.Text{Text: "patched"}}
+			return loop.AssistantDecision{Message: &msg}, nil
+		}},
+	}, func(ev event.Event) error {
+		if end, ok := ev.(event.MessageEnd); ok {
+			ended = end.Message
+		}
+		return nil
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := messages[1].Content[0].(message.Text).Text; got != "patched" {
+		t.Fatalf("message = %q, want patched", got)
+	}
+	if got := ended.Content[0].(message.Text).Text; got != "patched" {
+		t.Fatalf("message end = %q, want patched", got)
+	}
+}
+
 func TestRunStopsWhenContextCanceled(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	stream := func(ctx context.Context, req provider.Request) (<-chan provider.Event, error) {

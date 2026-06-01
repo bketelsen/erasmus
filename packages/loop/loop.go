@@ -37,8 +37,9 @@ type Config struct {
 
 // Hooks customizes low-level loop behavior.
 type Hooks struct {
-	BeforeToolCall func(context.Context, ToolCallContext) (ToolDecision, error)
-	AfterToolCall  func(context.Context, ToolResultContext) (ToolResultPatch, error)
+	BeforeToolCall        func(context.Context, ToolCallContext) (ToolDecision, error)
+	AfterToolCall         func(context.Context, ToolResultContext) (ToolResultPatch, error)
+	BeforeAssistantCommit func(context.Context, message.Message) (AssistantDecision, error)
 }
 
 // ToolCallContext describes a pending tool call.
@@ -65,6 +66,11 @@ type ToolResultContext struct {
 // ToolResultPatch may replace a tool result after execution.
 type ToolResultPatch struct {
 	Result *tool.Result
+}
+
+// AssistantDecision may patch an assistant message before it is committed.
+type AssistantDecision struct {
+	Message *message.Message
 }
 
 // Run appends prompts to context and runs provider/tool turns until completion.
@@ -130,6 +136,19 @@ func run(ctx context.Context, messages []message.Message, c Context, cfg Config,
 			return messages, err
 		}
 		if len(assistant.Content) > 0 {
+			if cfg.Hooks.BeforeAssistantCommit != nil {
+				decision, err := cfg.Hooks.BeforeAssistantCommit(ctx, assistant)
+				if err != nil {
+					emitErr := emitEvent(emit, event.TurnEnd{Step: step, Stop: stop, Err: err.Error()})
+					if emitErr != nil {
+						return messages, emitErr
+					}
+					return messages, err
+				}
+				if decision.Message != nil {
+					assistant = *decision.Message
+				}
+			}
 			messages = append(messages, assistant)
 			if err := emitEvent(emit, event.MessageEnd{Message: assistant}); err != nil {
 				return messages, err

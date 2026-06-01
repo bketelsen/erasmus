@@ -46,6 +46,7 @@ type Hooks struct {
 	AfterProviderResponse func(context.Context, ProviderResponseContext) error
 	ToolCall              func(context.Context, ToolCallContext) (ToolCallDecision, error)
 	ToolResult            func(context.Context, ToolResultContext) (ToolResultPatch, error)
+	BeforeAssistantCommit func(context.Context, AssistantCommitContext) (AssistantCommitResult, error)
 	BeforeCompact         func(context.Context, BeforeCompactContext) (BeforeCompactResult, error)
 	AfterCompact          func(context.Context, AfterCompactContext) error
 	SessionTree           func(context.Context, SessionTreeContext) (SessionTreeResult, error)
@@ -92,6 +93,16 @@ type ToolResultContext struct {
 // ToolResultPatch may replace a tool result after execution.
 type ToolResultPatch struct {
 	Result *tool.Result
+}
+
+// AssistantCommitContext describes an assistant message before it is committed.
+type AssistantCommitContext struct {
+	Message message.Message
+}
+
+// AssistantCommitResult may patch an assistant message before commit.
+type AssistantCommitResult struct {
+	Message *message.Message
 }
 
 // BeforeCompactContext describes a requested session compaction.
@@ -242,7 +253,7 @@ func wrapProviderStream(stream provider.StreamFunc, hooks Hooks) provider.Stream
 }
 
 func composeLoopHooks(hooks loop.Hooks, harnessHooks Hooks, confirm func(context.Context, loop.ToolCallContext) (bool, error)) loop.Hooks {
-	if harnessHooks.ToolCall == nil && harnessHooks.ToolResult == nil && confirm == nil {
+	if harnessHooks.ToolCall == nil && harnessHooks.ToolResult == nil && harnessHooks.BeforeAssistantCommit == nil && confirm == nil {
 		return hooks
 	}
 	previous := hooks.BeforeToolCall
@@ -311,6 +322,30 @@ func composeLoopHooks(hooks loop.Hooks, harnessHooks Hooks, confirm func(context
 				patch.Result = next.Result
 			}
 			return patch, nil
+		}
+	}
+	previousCommit := hooks.BeforeAssistantCommit
+	if harnessHooks.BeforeAssistantCommit != nil {
+		hooks.BeforeAssistantCommit = func(ctx context.Context, msg message.Message) (loop.AssistantDecision, error) {
+			var decision loop.AssistantDecision
+			if previousCommit != nil {
+				prior, err := previousCommit(ctx, msg)
+				if err != nil {
+					return loop.AssistantDecision{}, err
+				}
+				decision = prior
+				if prior.Message != nil {
+					msg = *prior.Message
+				}
+			}
+			next, err := harnessHooks.BeforeAssistantCommit(ctx, AssistantCommitContext{Message: msg})
+			if err != nil {
+				return loop.AssistantDecision{}, err
+			}
+			if next.Message != nil {
+				decision.Message = next.Message
+			}
+			return decision, nil
 		}
 	}
 	return hooks

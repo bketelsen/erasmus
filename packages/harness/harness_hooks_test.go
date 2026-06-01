@@ -360,6 +360,46 @@ func TestHarnessAfterProviderResponseErrorStopsRun(t *testing.T) {
 	drain(events)
 }
 
+func TestHarnessBeforeAssistantCommitPatchesMessage(t *testing.T) {
+	ctx := context.Background()
+	stream := func(ctx context.Context, req provider.Request) (<-chan provider.Event, error) {
+		return streamEvents(provider.MessageStart{MessageID: "a1"}, provider.TextDelta{Text: "original"}, provider.MessageEnd{StopReason: "end_turn"}), nil
+	}
+	h, err := harness.New(ctx, harness.Config{
+		Session: memory.New("test"),
+		Stream:  stream,
+		Model:   model.Model{Provider: "fake", ID: "test"},
+		Hooks: harness.Hooks{
+			BeforeAssistantCommit: func(ctx context.Context, commit harness.AssistantCommitContext) (harness.AssistantCommitResult, error) {
+				if got := commit.Message.Content[0].(message.Text).Text; got != "original" {
+					t.Fatalf("assistant = %q, want original", got)
+				}
+				msg := commit.Message
+				msg.Content = []message.Content{message.Text{Text: "patched"}}
+				return harness.AssistantCommitResult{Message: &msg}, nil
+			},
+		},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	events, err := h.Prompt(ctx, "hi", harness.PromptOptions{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := h.Wait(ctx); err != nil {
+		t.Fatal(err)
+	}
+	drain(events)
+	built, err := h.Session().BuildContext(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := built.Messages[1].Content[0].(message.Text).Text; got != "patched" {
+		t.Fatalf("assistant = %q, want patched", got)
+	}
+}
+
 func TestHarnessBeforeAgentStartCanPatchPrompt(t *testing.T) {
 	ctx := context.Background()
 	seen := false
