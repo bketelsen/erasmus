@@ -3,6 +3,7 @@ package harness_test
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"strings"
 	"testing"
 
@@ -117,6 +118,179 @@ func TestHarnessToolCallHookRunsAfterLoopHookAndCanDeny(t *testing.T) {
 	if !result.IsError || result.Content[0].(message.Text).Text != "blocked by harness" {
 		t.Fatalf("tool result = %+v", result)
 	}
+}
+
+func TestHarnessToolResultHookPatchesResult(t *testing.T) {
+	ctx := context.Background()
+	calls := 0
+	stream := func(ctx context.Context, req provider.Request) (<-chan provider.Event, error) {
+		calls++
+		if calls == 1 {
+			return streamEvents(provider.MessageStart{MessageID: "a1"}, provider.ToolCall{ID: "c1", Name: "stub", Arguments: json.RawMessage(`{}`)}, provider.MessageEnd{StopReason: "tool_use"}), nil
+		}
+		return streamEvents(provider.MessageStart{MessageID: "a2"}, provider.TextDelta{Text: "done"}, provider.MessageEnd{StopReason: "end_turn"}), nil
+	}
+	h, err := harness.New(ctx, harness.Config{
+		Session: memory.New("test"),
+		Stream:  stream,
+		Model:   model.Model{Provider: "fake", ID: "test"},
+		Tools:   tool.NewRegistry(&recordingTool{name: "stub"}),
+		Hooks: harness.Hooks{
+			ToolResult: func(ctx context.Context, tr harness.ToolResultContext) (harness.ToolResultPatch, error) {
+				if got := tr.Result.Content[0].(message.Text).Text; got != "ran" {
+					t.Fatalf("hook result = %q, want ran", got)
+				}
+				result := tool.Result{Content: []message.Content{message.Text{Text: "patched by harness"}}}
+				return harness.ToolResultPatch{Result: &result}, nil
+			},
+		},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	events, err := h.Prompt(ctx, "hi", harness.PromptOptions{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := h.Wait(ctx); err != nil {
+		t.Fatal(err)
+	}
+	drain(events)
+	built, err := h.Session().BuildContext(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	result := built.Messages[2].Content[0].(message.ToolResult)
+	if got := result.Content[0].(message.Text).Text; got != "patched by harness" {
+		t.Fatalf("tool result = %q, want patched by harness", got)
+	}
+}
+
+func TestHarnessToolResultHookRunsAfterLoopHook(t *testing.T) {
+	ctx := context.Background()
+	order := []string{}
+	calls := 0
+	stream := func(ctx context.Context, req provider.Request) (<-chan provider.Event, error) {
+		calls++
+		if calls == 1 {
+			return streamEvents(provider.MessageStart{MessageID: "a1"}, provider.ToolCall{ID: "c1", Name: "stub", Arguments: json.RawMessage(`{}`)}, provider.MessageEnd{StopReason: "tool_use"}), nil
+		}
+		return streamEvents(provider.MessageStart{MessageID: "a2"}, provider.TextDelta{Text: "done"}, provider.MessageEnd{StopReason: "end_turn"}), nil
+	}
+	h, err := harness.New(ctx, harness.Config{
+		Session: memory.New("test"),
+		Stream:  stream,
+		Model:   model.Model{Provider: "fake", ID: "test"},
+		Tools:   tool.NewRegistry(&recordingTool{name: "stub"}),
+		LoopHooks: loop.Hooks{AfterToolCall: func(ctx context.Context, tr loop.ToolResultContext) (loop.ToolResultPatch, error) {
+			order = append(order, "loop")
+			result := tool.Result{Content: []message.Content{message.Text{Text: "patched by loop"}}}
+			return loop.ToolResultPatch{Result: &result}, nil
+		}},
+		Hooks: harness.Hooks{
+			ToolResult: func(ctx context.Context, tr harness.ToolResultContext) (harness.ToolResultPatch, error) {
+				order = append(order, "harness")
+				if got := tr.Result.Content[0].(message.Text).Text; got != "patched by loop" {
+					t.Fatalf("hook result = %q, want patched by loop", got)
+				}
+				result := tool.Result{Content: []message.Content{message.Text{Text: "patched by harness"}}}
+				return harness.ToolResultPatch{Result: &result}, nil
+			},
+		},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	events, err := h.Prompt(ctx, "hi", harness.PromptOptions{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := h.Wait(ctx); err != nil {
+		t.Fatal(err)
+	}
+	drain(events)
+	if got := strings.Join(order, ","); got != "loop,harness" {
+		t.Fatalf("hook order = %s, want loop,harness", got)
+	}
+	built, err := h.Session().BuildContext(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	result := built.Messages[2].Content[0].(message.ToolResult)
+	if got := result.Content[0].(message.Text).Text; got != "patched by harness" {
+		t.Fatalf("tool result = %q, want patched by harness", got)
+	}
+}
+
+func TestHarnessBeforeProviderRequestCanMutateRequest(t *testing.T) {
+	ctx := context.Background()
+	seen := false
+	stream := func(ctx context.Context, req provider.Request) (<-chan provider.Event, error) {
+		seen = true
+		if req.MaxTokens != 123 {
+			t.Fatalf("max tokens = %d, want 123", req.MaxTokens)
+		}
+		if req.Meta["source"] != "harness-hook" {
+			t.Fatalf("meta = %+v, want source harness-hook", req.Meta)
+		}
+		return streamEvents(provider.MessageStart{MessageID: "a1"}, provider.TextDelta{Text: "done"}, provider.MessageEnd{StopReason: "end_turn"}), nil
+	}
+	h, err := harness.New(ctx, harness.Config{
+		Session: memory.New("test"),
+		Stream:  stream,
+		Model:   model.Model{Provider: "fake", ID: "test"},
+		Hooks: harness.Hooks{
+			BeforeProviderRequest: func(ctx context.Context, req *provider.Request) error {
+				req.MaxTokens = 123
+				req.Meta = map[string]string{"source": "harness-hook"}
+				return nil
+			},
+		},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	events, err := h.Prompt(ctx, "hi", harness.PromptOptions{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := h.Wait(ctx); err != nil {
+		t.Fatal(err)
+	}
+	drain(events)
+	if !seen {
+		t.Fatal("provider stream was not called")
+	}
+}
+
+func TestHarnessBeforeProviderRequestErrorStopsRun(t *testing.T) {
+	ctx := context.Background()
+	hookErr := errors.New("request blocked")
+	stream := func(ctx context.Context, req provider.Request) (<-chan provider.Event, error) {
+		t.Fatal("provider stream should not be called")
+		return nil, nil
+	}
+	h, err := harness.New(ctx, harness.Config{
+		Session: memory.New("test"),
+		Stream:  stream,
+		Model:   model.Model{Provider: "fake", ID: "test"},
+		Hooks: harness.Hooks{
+			BeforeProviderRequest: func(context.Context, *provider.Request) error {
+				return hookErr
+			},
+		},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	events, err := h.Prompt(ctx, "hi", harness.PromptOptions{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := h.Wait(ctx); !errors.Is(err, hookErr) {
+		t.Fatalf("wait error = %v, want %v", err, hookErr)
+	}
+	drain(events)
 }
 
 type recordingTool struct {

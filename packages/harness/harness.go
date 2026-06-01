@@ -41,7 +41,9 @@ type PromptOptions struct{}
 
 // Hooks customizes harness-level runtime behavior.
 type Hooks struct {
-	ToolCall func(context.Context, ToolCallContext) (ToolCallDecision, error)
+	BeforeProviderRequest func(context.Context, *provider.Request) error
+	ToolCall              func(context.Context, ToolCallContext) (ToolCallDecision, error)
+	ToolResult            func(context.Context, ToolResultContext) (ToolResultPatch, error)
 }
 
 // ToolCallContext describes a pending tool call observed by harness hooks.
@@ -55,6 +57,19 @@ type ToolCallDecision struct {
 	Deny      bool
 	Result    *tool.Result
 	Arguments []byte
+}
+
+// ToolResultContext describes a completed tool call observed by harness hooks.
+type ToolResultContext struct {
+	Call   message.ToolCall
+	Tool   tool.Tool
+	Result tool.Result
+	Err    error
+}
+
+// ToolResultPatch may replace a tool result after execution.
+type ToolResultPatch struct {
+	Result *tool.Result
 }
 
 // Resources groups runtime prompt resources that can be changed together.
@@ -88,6 +103,7 @@ type Harness struct {
 	seen    int
 	skills  []skill.Skill
 	tools   tool.Registry
+	hooks   Hooks
 }
 
 // New creates a harness from durable session context.
@@ -127,60 +143,99 @@ func New(ctx context.Context, cfg Config) (*Harness, error) {
 		}
 	}
 	loopHooks := composeLoopHooks(cfg.LoopHooks, cfg.Hooks, cfg.ConfirmToolCall)
+	stream := wrapProviderStream(cfg.Stream, cfg.Hooks)
 	a := agent.New(agent.Config{
 		InitialState: agent.State{SystemPrompt: systemPrompt, Model: m, Reasoning: reasoning, Tools: activeTools, Messages: built.Messages},
-		LoopConfig:   loop.Config{Model: m, Reasoning: reasoning, Stream: cfg.Stream, Hooks: loopHooks, MaxSteps: cfg.MaxSteps, SessionID: cfg.Session.ID()},
+		LoopConfig:   loop.Config{Model: m, Reasoning: reasoning, Stream: stream, Hooks: loopHooks, MaxSteps: cfg.MaxSteps, SessionID: cfg.Session.ID()},
 	})
-	h := &Harness{session: cfg.Session, agent: a, stream: cfg.Stream, subs: map[int]func(event.Event){}, seen: len(built.Messages), skills: append([]skill.Skill(nil), cfg.Skills...), tools: cfg.Tools}
+	h := &Harness{session: cfg.Session, agent: a, stream: cfg.Stream, subs: map[int]func(event.Event){}, seen: len(built.Messages), skills: append([]skill.Skill(nil), cfg.Skills...), tools: cfg.Tools, hooks: cfg.Hooks}
 	a.Subscribe(h.handleEvent)
 	return h, nil
 }
 
+func wrapProviderStream(stream provider.StreamFunc, hooks Hooks) provider.StreamFunc {
+	if hooks.BeforeProviderRequest == nil {
+		return stream
+	}
+	return func(ctx context.Context, req provider.Request) (<-chan provider.Event, error) {
+		if err := hooks.BeforeProviderRequest(ctx, &req); err != nil {
+			return nil, err
+		}
+		return stream(ctx, req)
+	}
+}
+
 func composeLoopHooks(hooks loop.Hooks, harnessHooks Hooks, confirm func(context.Context, loop.ToolCallContext) (bool, error)) loop.Hooks {
-	if harnessHooks.ToolCall == nil && confirm == nil {
+	if harnessHooks.ToolCall == nil && harnessHooks.ToolResult == nil && confirm == nil {
 		return hooks
 	}
 	previous := hooks.BeforeToolCall
-	hooks.BeforeToolCall = func(ctx context.Context, tc loop.ToolCallContext) (loop.ToolDecision, error) {
-		var decision loop.ToolDecision
-		if previous != nil {
-			prior, err := previous(ctx, tc)
-			if err != nil || prior.Deny {
-				return prior, err
+	if harnessHooks.ToolCall != nil || confirm != nil {
+		hooks.BeforeToolCall = func(ctx context.Context, tc loop.ToolCallContext) (loop.ToolDecision, error) {
+			var decision loop.ToolDecision
+			if previous != nil {
+				prior, err := previous(ctx, tc)
+				if err != nil || prior.Deny {
+					return prior, err
+				}
+				decision = prior
+				if len(prior.Arguments) > 0 {
+					tc.Call.Arguments = prior.Arguments
+				}
 			}
-			decision = prior
-			if len(prior.Arguments) > 0 {
-				tc.Call.Arguments = prior.Arguments
+			if harnessHooks.ToolCall != nil {
+				next, err := harnessHooks.ToolCall(ctx, ToolCallContext{Call: tc.Call, Tool: tc.Tool})
+				if err != nil {
+					return loop.ToolDecision{}, err
+				}
+				if len(next.Arguments) > 0 {
+					decision.Arguments = next.Arguments
+					tc.Call.Arguments = next.Arguments
+				}
+				if next.Result != nil {
+					decision.Result = next.Result
+				}
+				if next.Deny {
+					decision.Deny = true
+					return decision, nil
+				}
 			}
+			if confirm != nil {
+				ok, err := confirm(ctx, tc)
+				if err != nil {
+					return loop.ToolDecision{}, err
+				}
+				if !ok {
+					decision.Deny = true
+					return decision, nil
+				}
+			}
+			return decision, nil
 		}
-		if harnessHooks.ToolCall != nil {
-			next, err := harnessHooks.ToolCall(ctx, ToolCallContext{Call: tc.Call, Tool: tc.Tool})
-			if err != nil {
-				return loop.ToolDecision{}, err
+	}
+	after := hooks.AfterToolCall
+	if harnessHooks.ToolResult != nil {
+		hooks.AfterToolCall = func(ctx context.Context, tr loop.ToolResultContext) (loop.ToolResultPatch, error) {
+			var patch loop.ToolResultPatch
+			if after != nil {
+				prior, err := after(ctx, tr)
+				if err != nil {
+					return loop.ToolResultPatch{}, err
+				}
+				patch = prior
+				if prior.Result != nil {
+					tr.Result = *prior.Result
+				}
 			}
-			if len(next.Arguments) > 0 {
-				decision.Arguments = next.Arguments
-				tc.Call.Arguments = next.Arguments
+			next, err := harnessHooks.ToolResult(ctx, ToolResultContext{Call: tr.Call, Tool: tr.Tool, Result: tr.Result, Err: tr.Err})
+			if err != nil {
+				return loop.ToolResultPatch{}, err
 			}
 			if next.Result != nil {
-				decision.Result = next.Result
+				patch.Result = next.Result
 			}
-			if next.Deny {
-				decision.Deny = true
-				return decision, nil
-			}
+			return patch, nil
 		}
-		if confirm != nil {
-			ok, err := confirm(ctx, tc)
-			if err != nil {
-				return loop.ToolDecision{}, err
-			}
-			if !ok {
-				decision.Deny = true
-				return decision, nil
-			}
-		}
-		return decision, nil
 	}
 	return hooks
 }
@@ -295,8 +350,9 @@ func (h *Harness) SetModelAndStream(ctx context.Context, m model.Model, stream p
 	}
 	h.mu.Lock()
 	h.stream = stream
+	hooks := h.hooks
 	h.mu.Unlock()
-	h.agent.SetStream(stream)
+	h.agent.SetStream(wrapProviderStream(stream, hooks))
 	h.agent.SetModel(m)
 	h.publish(event.ModelUpdate{Model: m})
 	return nil
