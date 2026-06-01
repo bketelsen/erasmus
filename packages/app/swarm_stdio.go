@@ -14,6 +14,7 @@ import (
 
 	"erasmus/packages/auth"
 	"erasmus/packages/config"
+	"erasmus/packages/event"
 	"erasmus/packages/harness"
 	"erasmus/packages/skill"
 	"erasmus/packages/swarm"
@@ -129,6 +130,15 @@ func newSwarmController(ctx context.Context, cfg config.Config, store auth.Store
 		if err != nil {
 			_ = sess.Close(ctx)
 			return nil, err
+		}
+		if extensions != nil {
+			if err := applyExtensionHostActions(ctx, h, extensions.DrainHostActions()); err != nil {
+				_ = sess.Close(ctx)
+				return nil, err
+			}
+			h.Subscribe(func(ev event.Event) {
+				_ = forwardExtensionRuntimeEvent(context.Background(), h, extensions, ev)
+			})
 		}
 		runtimes[req.ID] = h
 		return h, nil

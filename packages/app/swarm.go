@@ -91,7 +91,19 @@ func RunSwarmConfigured(ctx context.Context, opts SwarmRunOptions, cfg config.Co
 			if err != nil {
 				return nil, err
 			}
-			return harness.New(ctx, resolved.Harness)
+			h, err := harness.New(ctx, resolved.Harness)
+			if err != nil {
+				return nil, err
+			}
+			if extensions != nil {
+				if err := applyExtensionHostActions(ctx, h, extensions.DrainHostActions()); err != nil {
+					return nil, err
+				}
+				h.Subscribe(func(ev event.Event) {
+					_ = forwardExtensionRuntimeEvent(context.Background(), h, extensions, ev)
+				})
+			}
+			return h, nil
 		},
 	})
 	if err != nil {

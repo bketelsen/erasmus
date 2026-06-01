@@ -79,3 +79,39 @@ for line in sys.stdin:
 		t.Fatalf("missing extension-spawned agent:\n%s", out.String())
 	}
 }
+
+func TestServeSwarmStdioForwardsRuntimeEventsToExtensions(t *testing.T) {
+	dir := t.TempDir()
+	t.Setenv("XDG_STATE_HOME", filepath.Join(dir, "state"))
+	sessionPath := filepath.Join(dir, "swarm.jsonl")
+	path := filepath.Join(dir, "events.py")
+	script := `#!/usr/bin/env python3
+import json, sys
+print(json.dumps({"type":"hello","data":{"name":"swarm-stdio-event-test","version":"1"}}), flush=True)
+print(json.dumps({"type":"subscribe","data":{"events":["settled"]}}), flush=True)
+for line in sys.stdin:
+    frame = json.loads(line)
+    if frame.get("type") == "event" and frame.get("data", {}).get("type") == "settled":
+        print(json.dumps({"type":"host_action","data":{"type":"save_point","data":{"label":"swarm-stdio-settled","data":{"source":"extension"}}}}), flush=True)
+`
+	if err := os.WriteFile(path, []byte(script), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	input := strings.Join([]string{
+		`{"id":"1","method":"spawn","params":{"id":"main","task":"hello","session_path":` + quote(sessionPath) + `}}`,
+		`{"id":"2","method":"wait","params":{"id":"main"}}`,
+		`{"id":"3","method":"close"}`,
+	}, "\n") + "\n"
+	var out bytes.Buffer
+	err := ServeSwarmStdio(context.Background(), strings.NewReader(input), &out, config.Config{Provider: "fake", Model: "echo", Extensions: []config.ExtensionConfig{{Command: path}}}, auth.NewMemoryStore())
+	if err != nil {
+		t.Fatal(err)
+	}
+	data, err := os.ReadFile(sessionPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(data), `"custom_type":"checkpoint"`) || !strings.Contains(string(data), `"label":"swarm-stdio-settled"`) {
+		t.Fatalf("session log missing extension checkpoint:\n%s\noutput:\n%s", data, out.String())
+	}
+}
