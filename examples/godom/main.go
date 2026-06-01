@@ -440,6 +440,12 @@ func demoStream() provider.StreamFunc {
 			defer close(out)
 			text := strings.ToLower(lastUserText(req.Messages))
 			out <- provider.MessageStart{MessageID: fmt.Sprintf("msg-%d", time.Now().UnixNano())}
+			if toolText := lastToolText(req.Messages); toolText != "" {
+				out <- provider.TextDelta{Text: "Tool result observed: " + truncate(toolText, 220)}
+				out <- provider.Usage{Usage: model.Usage{InputTokens: len(text) / 4, OutputTokens: 32}}
+				out <- provider.MessageEnd{StopReason: "end_turn"}
+				return
+			}
 			if name, args, ok := scriptedToolCall(text, req.Tools); ok {
 				out <- provider.TextDelta{Text: "I'll use the " + name + " tool.\n"}
 				out <- provider.ToolCall{ID: "call-" + name, Name: name, Arguments: args}
@@ -447,9 +453,7 @@ func demoStream() provider.StreamFunc {
 				out <- provider.MessageEnd{StopReason: "tool_use"}
 				return
 			}
-			if toolText := lastToolText(req.Messages); toolText != "" {
-				out <- provider.TextDelta{Text: "Tool result observed: " + truncate(toolText, 220)}
-			} else if strings.Contains(text, "skill") {
+			if strings.Contains(text, "skill") {
 				out <- provider.TextDelta{Text: "Skill-aware response. Available skills are in my system prompt; request was: " + truncate(lastUserText(req.Messages), 180)}
 			} else {
 				out <- provider.TextDelta{Text: "Demo response from " + req.Model.ID + " with " + fmt.Sprint(len(req.Tools)) + " tools available. Prompt: " + truncate(lastUserText(req.Messages), 200)}
