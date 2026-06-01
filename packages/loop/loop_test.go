@@ -359,6 +359,67 @@ func TestRunBeforeProviderRequestHookCanReject(t *testing.T) {
 	}
 }
 
+func TestRunToolExecutionSequentialByDefault(t *testing.T) {
+	registry := tool.NewRegistry(&sleepTool{name: "one", delay: 20 * time.Millisecond}, &sleepTool{name: "two", delay: 20 * time.Millisecond})
+	var running int
+	overlapped := false
+	stream := twoToolCallStream("one", "two")
+	_, err := loop.Run(context.Background(), []message.Message{{Role: message.RoleUser}}, loop.Context{Tools: registry}, loop.Config{
+		Model:    model.Model{Provider: "fake", ID: "test"},
+		Stream:   stream,
+		MaxSteps: 2,
+		Hooks: loop.Hooks{BeforeToolCall: func(ctx context.Context, tc loop.ToolCallContext) (loop.ToolDecision, error) {
+			running++
+			if running > 1 {
+				overlapped = true
+			}
+			return loop.ToolDecision{}, nil
+		}, AfterToolCall: func(ctx context.Context, tr loop.ToolResultContext) (loop.ToolResultPatch, error) {
+			running--
+			return loop.ToolResultPatch{}, nil
+		}},
+	}, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if overlapped {
+		t.Fatal("default tool execution should be sequential")
+	}
+}
+
+func TestRunToolExecutionParallelPreservesMessageOrder(t *testing.T) {
+	started := make(chan string, 2)
+	release := make(chan struct{})
+	registry := tool.NewRegistry(&gatedTool{name: "one", started: started, release: release}, &gatedTool{name: "two", started: started, release: release})
+	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+	defer cancel()
+	go func() {
+		<-started
+		<-started
+		close(release)
+	}()
+	messages, err := loop.Run(ctx, []message.Message{{Role: message.RoleUser}}, loop.Context{Tools: registry}, loop.Config{
+		Model:         model.Model{Provider: "fake", ID: "test"},
+		Stream:        twoToolCallStream("one", "two"),
+		MaxSteps:      2,
+		ToolExecution: tool.ToolParallel,
+	}, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(messages) != 5 {
+		t.Fatalf("messages len = %d, want 5", len(messages))
+	}
+	first := messages[2].Content[0].(message.ToolResult)
+	second := messages[3].Content[0].(message.ToolResult)
+	if first.CallID != "call-one" || first.Content[0].(message.Text).Text != "one" {
+		t.Fatalf("first result = %+v", first)
+	}
+	if second.CallID != "call-two" || second.Content[0].(message.Text).Text != "two" {
+		t.Fatalf("second result = %+v", second)
+	}
+}
+
 func TestRunTransformContextHookMutatesProviderMessages(t *testing.T) {
 	seen := false
 	stream := func(ctx context.Context, req provider.Request) (<-chan provider.Event, error) {
@@ -451,6 +512,62 @@ func streamEvents(ctx context.Context, events ...provider.Event) <-chan provider
 	}
 	close(ch)
 	return ch
+}
+
+func twoToolCallStream(first, second string) provider.StreamFunc {
+	calls := 0
+	return func(ctx context.Context, req provider.Request) (<-chan provider.Event, error) {
+		calls++
+		if calls == 1 {
+			return streamEvents(ctx,
+				provider.MessageStart{MessageID: "a1"},
+				provider.ToolCall{ID: "call-" + first, Name: first, Arguments: json.RawMessage(`{}`)},
+				provider.ToolCall{ID: "call-" + second, Name: second, Arguments: json.RawMessage(`{}`)},
+				provider.MessageEnd{StopReason: "tool_use"},
+			), nil
+		}
+		return streamEvents(ctx, provider.MessageStart{MessageID: "a2"}, provider.TextDelta{Text: "done"}, provider.MessageEnd{StopReason: "end_turn"}), nil
+	}
+}
+
+type sleepTool struct {
+	name  string
+	delay time.Duration
+}
+
+func (t *sleepTool) Name() string            { return t.name }
+func (t *sleepTool) Description() string     { return t.name }
+func (t *sleepTool) Schema() json.RawMessage { return nil }
+func (t *sleepTool) Execute(ctx context.Context, args json.RawMessage, progress func(tool.Progress)) (tool.Result, error) {
+	select {
+	case <-time.After(t.delay):
+		return tool.Result{Content: []message.Content{message.Text{Text: t.name}}}, nil
+	case <-ctx.Done():
+		return tool.Result{}, ctx.Err()
+	}
+}
+
+type gatedTool struct {
+	name    string
+	started chan<- string
+	release <-chan struct{}
+}
+
+func (t *gatedTool) Name() string            { return t.name }
+func (t *gatedTool) Description() string     { return t.name }
+func (t *gatedTool) Schema() json.RawMessage { return nil }
+func (t *gatedTool) Execute(ctx context.Context, args json.RawMessage, progress func(tool.Progress)) (tool.Result, error) {
+	select {
+	case t.started <- t.name:
+	case <-ctx.Done():
+		return tool.Result{}, ctx.Err()
+	}
+	select {
+	case <-t.release:
+		return tool.Result{Content: []message.Content{message.Text{Text: t.name}}}, nil
+	case <-ctx.Done():
+		return tool.Result{}, ctx.Err()
+	}
 }
 
 func assertEvents(t *testing.T, got, want []string) {

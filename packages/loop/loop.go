@@ -5,6 +5,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"sync"
 	"time"
 
 	"erasmus/packages/event"
@@ -197,7 +198,7 @@ func run(ctx context.Context, messages []message.Message, c Context, cfg Config,
 			continue
 		}
 
-		toolMessages, err := executeToolCalls(ctx, c.Tools, toolCalls, cfg.Hooks, emit)
+		toolMessages, err := executeToolCalls(ctx, c.Tools, toolCalls, cfg.ToolExecution, cfg.Hooks, emit)
 		messages = append(messages, toolMessages...)
 		if err != nil {
 			emitErr := emitEvent(emit, event.TurnEnd{Step: step, Stop: "tool_error", Err: err.Error()})
@@ -291,73 +292,116 @@ func consumeProviderStream(ctx context.Context, stream <-chan provider.Event, em
 	}
 }
 
-func executeToolCalls(ctx context.Context, registry tool.Registry, calls []message.ToolCall, hooks Hooks, emit func(event.Event) error) ([]message.Message, error) {
+func executeToolCalls(ctx context.Context, registry tool.Registry, calls []message.ToolCall, mode tool.ExecutionMode, hooks Hooks, emit func(event.Event) error) ([]message.Message, error) {
+	if mode == tool.ToolParallel && len(calls) > 1 {
+		return executeToolCallsParallel(ctx, registry, calls, hooks, emit)
+	}
 	messages := make([]message.Message, 0, len(calls))
 	for _, call := range calls {
-		if registry == nil {
-			result := errorToolResult("tool registry is not configured")
-			if err := emitEvent(emit, event.ToolExecutionEnd{ID: call.ID, Name: call.Name, Result: result, IsError: true}); err != nil {
-				return messages, err
-			}
-			messages = append(messages, toolResultMessage(call.ID, result))
-			continue
-		}
-		t, ok := registry.Get(call.Name)
-		if !ok {
-			result := errorToolResult(fmt.Sprintf("tool %q not found", call.Name))
-			if err := emitEvent(emit, event.ToolExecutionEnd{ID: call.ID, Name: call.Name, Result: result, IsError: true}); err != nil {
-				return messages, err
-			}
-			messages = append(messages, toolResultMessage(call.ID, result))
-			continue
-		}
-		if hooks.BeforeToolCall != nil {
-			decision, err := hooks.BeforeToolCall(ctx, ToolCallContext{Call: call, Tool: t})
-			if err != nil {
-				return messages, err
-			}
-			if len(decision.Arguments) > 0 {
-				call.Arguments = decision.Arguments
-			}
-			if decision.Deny {
-				result := tool.Result{IsError: true, Content: []message.Content{message.Text{Text: "tool call denied"}}}
-				if decision.Result != nil {
-					result = *decision.Result
-				}
-				if err := emitEvent(emit, event.ToolExecutionEnd{ID: call.ID, Name: call.Name, Result: result, IsError: result.IsError}); err != nil {
-					return messages, err
-				}
-				messages = append(messages, toolResultMessage(call.ID, result))
-				continue
-			}
-		}
-		if err := emitEvent(emit, event.ToolExecutionStart{ID: call.ID, Name: call.Name, Args: call.Arguments}); err != nil {
-			return messages, err
-		}
-		result, err := t.Execute(ctx, call.Arguments, func(p tool.Progress) {
-			_ = emitEvent(emit, event.ToolExecutionProgress{ID: call.ID, Text: p.Text})
-		})
+		msg, err := executeToolCall(ctx, registry, call, hooks, emit)
 		if err != nil {
-			result.IsError = true
-			if len(result.Content) == 0 {
-				result.Content = []message.Content{message.Text{Text: err.Error()}}
-			}
-		}
-		if hooks.AfterToolCall != nil {
-			patch, hookErr := hooks.AfterToolCall(ctx, ToolResultContext{Call: call, Tool: t, Result: result, Err: err})
-			if hookErr != nil {
-				return messages, hookErr
-			}
-			if patch.Result != nil {
-				result = *patch.Result
-			}
-		}
-		if err := emitEvent(emit, event.ToolExecutionEnd{ID: call.ID, Name: call.Name, Result: result, IsError: result.IsError}); err != nil {
 			return messages, err
 		}
-		messages = append(messages, toolResultMessage(call.ID, result))
+		messages = append(messages, msg)
 	}
 	return messages, nil
+}
+
+func executeToolCallsParallel(ctx context.Context, registry tool.Registry, calls []message.ToolCall, hooks Hooks, emit func(event.Event) error) ([]message.Message, error) {
+	type outcome struct {
+		message message.Message
+		err     error
+	}
+	outcomes := make([]outcome, len(calls))
+	var wg sync.WaitGroup
+	var emitMu sync.Mutex
+	safeEmit := func(ev event.Event) error {
+		emitMu.Lock()
+		defer emitMu.Unlock()
+		return emitEvent(emit, ev)
+	}
+	for i, call := range calls {
+		wg.Add(1)
+		go func(i int, call message.ToolCall) {
+			defer wg.Done()
+			msg, err := executeToolCall(ctx, registry, call, hooks, safeEmit)
+			outcomes[i] = outcome{message: msg, err: err}
+		}(i, call)
+	}
+	wg.Wait()
+	messages := make([]message.Message, 0, len(calls))
+	var firstErr error
+	for _, out := range outcomes {
+		if out.err != nil && firstErr == nil {
+			firstErr = out.err
+		}
+		if out.message.Role != "" {
+			messages = append(messages, out.message)
+		}
+	}
+	return messages, firstErr
+}
+
+func executeToolCall(ctx context.Context, registry tool.Registry, call message.ToolCall, hooks Hooks, emit func(event.Event) error) (message.Message, error) {
+	if registry == nil {
+		result := errorToolResult("tool registry is not configured")
+		if err := emitEvent(emit, event.ToolExecutionEnd{ID: call.ID, Name: call.Name, Result: result, IsError: true}); err != nil {
+			return message.Message{}, err
+		}
+		return toolResultMessage(call.ID, result), nil
+	}
+	t, ok := registry.Get(call.Name)
+	if !ok {
+		result := errorToolResult(fmt.Sprintf("tool %q not found", call.Name))
+		if err := emitEvent(emit, event.ToolExecutionEnd{ID: call.ID, Name: call.Name, Result: result, IsError: true}); err != nil {
+			return message.Message{}, err
+		}
+		return toolResultMessage(call.ID, result), nil
+	}
+	if hooks.BeforeToolCall != nil {
+		decision, err := hooks.BeforeToolCall(ctx, ToolCallContext{Call: call, Tool: t})
+		if err != nil {
+			return message.Message{}, err
+		}
+		if len(decision.Arguments) > 0 {
+			call.Arguments = decision.Arguments
+		}
+		if decision.Deny {
+			result := tool.Result{IsError: true, Content: []message.Content{message.Text{Text: "tool call denied"}}}
+			if decision.Result != nil {
+				result = *decision.Result
+			}
+			if err := emitEvent(emit, event.ToolExecutionEnd{ID: call.ID, Name: call.Name, Result: result, IsError: result.IsError}); err != nil {
+				return message.Message{}, err
+			}
+			return toolResultMessage(call.ID, result), nil
+		}
+	}
+	if err := emitEvent(emit, event.ToolExecutionStart{ID: call.ID, Name: call.Name, Args: call.Arguments}); err != nil {
+		return message.Message{}, err
+	}
+	result, err := t.Execute(ctx, call.Arguments, func(p tool.Progress) {
+		_ = emitEvent(emit, event.ToolExecutionProgress{ID: call.ID, Text: p.Text})
+	})
+	if err != nil {
+		result.IsError = true
+		if len(result.Content) == 0 {
+			result.Content = []message.Content{message.Text{Text: err.Error()}}
+		}
+	}
+	if hooks.AfterToolCall != nil {
+		patch, hookErr := hooks.AfterToolCall(ctx, ToolResultContext{Call: call, Tool: t, Result: result, Err: err})
+		if hookErr != nil {
+			return message.Message{}, hookErr
+		}
+		if patch.Result != nil {
+			result = *patch.Result
+		}
+	}
+	if err := emitEvent(emit, event.ToolExecutionEnd{ID: call.ID, Name: call.Name, Result: result, IsError: result.IsError}); err != nil {
+		return message.Message{}, err
+	}
+	return toolResultMessage(call.ID, result), nil
 }
 
 func errorToolResult(text string) tool.Result {
