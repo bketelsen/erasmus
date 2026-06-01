@@ -5,12 +5,12 @@ import (
 	"strings"
 	"testing"
 
-	"erasmus/packages/compact"
-	"erasmus/packages/event"
-	"erasmus/packages/harness"
-	"erasmus/packages/message"
-	"erasmus/packages/model"
-	"erasmus/packages/session/memory"
+	"github.com/bketelsen/erasmus/packages/compact"
+	"github.com/bketelsen/erasmus/packages/event"
+	"github.com/bketelsen/erasmus/packages/harness"
+	"github.com/bketelsen/erasmus/packages/message"
+	"github.com/bketelsen/erasmus/packages/model"
+	"github.com/bketelsen/erasmus/packages/session/memory"
 )
 
 func TestHarnessCompact(t *testing.T) {

@@ -4,10 +4,10 @@ import (
 	"context"
 	"testing"
 
-	"erasmus/packages/event"
-	"erasmus/packages/harness"
-	"erasmus/packages/model"
-	"erasmus/packages/session/memory"
+	"github.com/bketelsen/erasmus/packages/event"
+	"github.com/bketelsen/erasmus/packages/harness"
+	"github.com/bketelsen/erasmus/packages/model"
+	"github.com/bketelsen/erasmus/packages/session/memory"
 )
 
 func TestHarnessSavePointPersistsAndEmitsEvent(t *testing.T) {

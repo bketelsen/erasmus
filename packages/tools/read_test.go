@@ -7,10 +7,10 @@ import (
 	"path/filepath"
 	"testing"
 
-	"erasmus/packages/message"
-	"erasmus/packages/sandbox"
-	"erasmus/packages/tool"
-	"erasmus/packages/tools"
+	"github.com/bketelsen/erasmus/packages/message"
+	"github.com/bketelsen/erasmus/packages/sandbox"
+	"github.com/bketelsen/erasmus/packages/tool"
+	"github.com/bketelsen/erasmus/packages/tools"
 )
 
 func TestReadToolReadsFile(t *testing.T) {

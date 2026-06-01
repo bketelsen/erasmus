@@ -9,10 +9,10 @@ import (
 	"testing"
 	"time"
 
-	"erasmus/packages/event"
-	"erasmus/packages/extension"
-	"erasmus/packages/extension/proto"
-	"erasmus/packages/message"
+	"github.com/bketelsen/erasmus/packages/event"
+	"github.com/bketelsen/erasmus/packages/extension"
+	"github.com/bketelsen/erasmus/packages/extension/proto"
+	"github.com/bketelsen/erasmus/packages/message"
 )
 
 func TestProcessExtensionTool(t *testing.T) {

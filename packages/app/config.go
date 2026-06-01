@@ -3,7 +3,7 @@ package app
 import (
 	"context"
 
-	"erasmus/packages/config"
+	"github.com/bketelsen/erasmus/packages/config"
 )
 
 // ConfigGet loads config from path.

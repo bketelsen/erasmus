@@ -10,8 +10,8 @@ import (
 	"sync"
 	"time"
 
-	"erasmus/packages/event"
-	"erasmus/packages/harness"
+	"github.com/bketelsen/erasmus/packages/event"
+	"github.com/bketelsen/erasmus/packages/harness"
 )
 
 // Factory creates a harness for a spawned swarm agent.

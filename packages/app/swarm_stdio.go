@@ -12,13 +12,13 @@ import (
 	"sync"
 	"time"
 
-	"erasmus/packages/auth"
-	"erasmus/packages/config"
-	"erasmus/packages/event"
-	"erasmus/packages/harness"
-	"erasmus/packages/skill"
-	"erasmus/packages/swarm"
-	"erasmus/packages/tool"
+	"github.com/bketelsen/erasmus/packages/auth"
+	"github.com/bketelsen/erasmus/packages/config"
+	"github.com/bketelsen/erasmus/packages/event"
+	"github.com/bketelsen/erasmus/packages/harness"
+	"github.com/bketelsen/erasmus/packages/skill"
+	"github.com/bketelsen/erasmus/packages/swarm"
+	"github.com/bketelsen/erasmus/packages/tool"
 )
 
 type swarmStdioRequest struct {

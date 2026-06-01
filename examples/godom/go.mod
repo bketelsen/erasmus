@@ -3,8 +3,8 @@ module erasmus-example-godom
 go 1.26.3
 
 require (
-	erasmus v0.0.0
 	github.com/anupshinde/godom v0.1.1
+	github.com/bketelsen/erasmus v0.0.0
 )
 
 require (
@@ -44,4 +44,4 @@ require (
 	google.golang.org/protobuf v1.36.11 // indirect
 )
 
-replace erasmus => ../..
+replace github.com/bketelsen/erasmus => ../..

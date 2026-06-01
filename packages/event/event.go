@@ -4,10 +4,10 @@ package event
 import (
 	"encoding/json"
 
-	"erasmus/packages/message"
-	"erasmus/packages/model"
-	"erasmus/packages/skill"
-	"erasmus/packages/tool"
+	"github.com/bketelsen/erasmus/packages/message"
+	"github.com/bketelsen/erasmus/packages/model"
+	"github.com/bketelsen/erasmus/packages/skill"
+	"github.com/bketelsen/erasmus/packages/tool"
 )
 
 // Event is implemented by every Erasmus runtime event.

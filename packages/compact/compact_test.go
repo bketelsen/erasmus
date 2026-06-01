@@ -5,8 +5,8 @@ import (
 	"strings"
 	"testing"
 
-	"erasmus/packages/compact"
-	"erasmus/packages/message"
+	"github.com/bketelsen/erasmus/packages/compact"
+	"github.com/bketelsen/erasmus/packages/message"
 )
 
 func TestPrepareAndRun(t *testing.T) {

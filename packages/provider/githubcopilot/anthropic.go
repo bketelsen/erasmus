@@ -10,11 +10,11 @@ import (
 	"net/http"
 	"strings"
 
-	"erasmus/packages/auth"
-	"erasmus/packages/message"
-	"erasmus/packages/model"
-	"erasmus/packages/provider"
-	"erasmus/packages/tool"
+	"github.com/bketelsen/erasmus/packages/auth"
+	"github.com/bketelsen/erasmus/packages/message"
+	"github.com/bketelsen/erasmus/packages/model"
+	"github.com/bketelsen/erasmus/packages/provider"
+	"github.com/bketelsen/erasmus/packages/tool"
 )
 
 // AnthropicMessagesClient streams Copilot Claude models through an Anthropic Messages-compatible API.
@@ -277,7 +277,7 @@ func readAnthropicStream(body io.ReadCloser, out chan<- provider.Event) {
 		case "message_stop":
 			out <- provider.MessageEnd{StopReason: stopReason}
 		case "error":
-			out <- provider.Error{Err: strings.TrimSpace(string(data))}
+			out <- provider.Error{Err: strings.TrimSpace(data)}
 		}
 	}
 	if err := scanner.Err(); err != nil {

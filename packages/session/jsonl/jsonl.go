@@ -11,9 +11,9 @@ import (
 	"sync"
 	"time"
 
-	"erasmus/packages/message"
-	"erasmus/packages/model"
-	"erasmus/packages/session"
+	"github.com/bketelsen/erasmus/packages/message"
+	"github.com/bketelsen/erasmus/packages/model"
+	"github.com/bketelsen/erasmus/packages/session"
 )
 
 // Session persists session entries as newline-delimited JSON.

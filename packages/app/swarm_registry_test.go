@@ -7,7 +7,7 @@ import (
 	"strings"
 	"testing"
 
-	"erasmus/packages/config"
+	"github.com/bketelsen/erasmus/packages/config"
 )
 
 func TestSwarmServerRegistry(t *testing.T) {

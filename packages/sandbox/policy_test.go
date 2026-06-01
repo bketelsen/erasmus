@@ -5,7 +5,7 @@ import (
 	"path/filepath"
 	"testing"
 
-	"erasmus/packages/sandbox"
+	"github.com/bketelsen/erasmus/packages/sandbox"
 )
 
 func TestResolveAllowsPathInsideRoot(t *testing.T) {

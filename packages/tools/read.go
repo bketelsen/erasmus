@@ -6,9 +6,9 @@ import (
 	"encoding/json"
 	"os"
 
-	"erasmus/packages/message"
-	"erasmus/packages/sandbox"
-	"erasmus/packages/tool"
+	"github.com/bketelsen/erasmus/packages/message"
+	"github.com/bketelsen/erasmus/packages/sandbox"
+	"github.com/bketelsen/erasmus/packages/tool"
 )
 
 // ReadTool reads UTF-8-ish text files from the sandbox.

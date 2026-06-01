@@ -10,9 +10,9 @@ import (
 	"strings"
 	"testing"
 
-	"erasmus/packages/app"
-	"erasmus/packages/auth"
-	"erasmus/packages/config"
+	"github.com/bketelsen/erasmus/packages/app"
+	"github.com/bketelsen/erasmus/packages/auth"
+	"github.com/bketelsen/erasmus/packages/config"
 )
 
 func TestRunConfiguredUsesExtensionTool(t *testing.T) {

@@ -4,10 +4,10 @@ import (
 	"context"
 	"sync"
 
-	"erasmus/packages/event"
-	"erasmus/packages/extension/proto"
-	"erasmus/packages/skill"
-	"erasmus/packages/tool"
+	"github.com/bketelsen/erasmus/packages/event"
+	"github.com/bketelsen/erasmus/packages/extension/proto"
+	"github.com/bketelsen/erasmus/packages/skill"
+	"github.com/bketelsen/erasmus/packages/tool"
 )
 
 // Manager keeps registered extension tools.

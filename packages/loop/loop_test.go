@@ -9,15 +9,15 @@ import (
 	"testing"
 	"time"
 
-	"erasmus/packages/event"
-	"erasmus/packages/loop"
-	"erasmus/packages/message"
-	"erasmus/packages/model"
-	"erasmus/packages/provider"
-	"erasmus/packages/provider/fake"
-	"erasmus/packages/sandbox"
-	"erasmus/packages/tool"
-	"erasmus/packages/tools"
+	"github.com/bketelsen/erasmus/packages/event"
+	"github.com/bketelsen/erasmus/packages/loop"
+	"github.com/bketelsen/erasmus/packages/message"
+	"github.com/bketelsen/erasmus/packages/model"
+	"github.com/bketelsen/erasmus/packages/provider"
+	"github.com/bketelsen/erasmus/packages/provider/fake"
+	"github.com/bketelsen/erasmus/packages/sandbox"
+	"github.com/bketelsen/erasmus/packages/tool"
+	"github.com/bketelsen/erasmus/packages/tools"
 )
 
 func TestRunTextOnly(t *testing.T) {

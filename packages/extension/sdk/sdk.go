@@ -10,10 +10,10 @@ import (
 	"os"
 	"sync"
 
-	"erasmus/packages/extension/proto"
-	"erasmus/packages/message"
-	"erasmus/packages/skill"
-	"erasmus/packages/tool"
+	"github.com/bketelsen/erasmus/packages/extension/proto"
+	"github.com/bketelsen/erasmus/packages/message"
+	"github.com/bketelsen/erasmus/packages/skill"
+	"github.com/bketelsen/erasmus/packages/tool"
 )
 
 // ToolResult is the canonical extension tool result shape.

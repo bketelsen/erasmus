@@ -9,10 +9,10 @@ import (
 	"testing"
 	"time"
 
-	"erasmus/packages/auth"
-	"erasmus/packages/config"
-	"erasmus/packages/model"
-	"erasmus/packages/session/memory"
+	"github.com/bketelsen/erasmus/packages/auth"
+	"github.com/bketelsen/erasmus/packages/config"
+	"github.com/bketelsen/erasmus/packages/model"
+	"github.com/bketelsen/erasmus/packages/session/memory"
 )
 
 func TestResolveHarnessConfigRefreshesExpiredGitHubCopilotOAuth(t *testing.T) {

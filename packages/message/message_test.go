@@ -4,7 +4,7 @@ import (
 	"encoding/json"
 	"testing"
 
-	"erasmus/packages/message"
+	"github.com/bketelsen/erasmus/packages/message"
 )
 
 func TestMessageUnmarshalJSONDecodesTextContent(t *testing.T) {

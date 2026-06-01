@@ -7,8 +7,8 @@ import (
 	"fmt"
 	"sync/atomic"
 
-	"erasmus/packages/extension/proto"
-	"erasmus/packages/tool"
+	"github.com/bketelsen/erasmus/packages/extension/proto"
+	"github.com/bketelsen/erasmus/packages/tool"
 )
 
 // Caller executes extension tool calls.

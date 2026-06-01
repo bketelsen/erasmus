@@ -10,8 +10,8 @@ import (
 	"testing"
 	"time"
 
-	"erasmus/packages/auth"
-	"erasmus/packages/config"
+	"github.com/bketelsen/erasmus/packages/auth"
+	"github.com/bketelsen/erasmus/packages/config"
 )
 
 func TestServeSwarmListenerAcrossConnections(t *testing.T) {

@@ -8,8 +8,8 @@ import (
 
 	"github.com/spf13/cobra"
 
-	"erasmus/packages/app"
-	"erasmus/packages/model"
+	"github.com/bketelsen/erasmus/packages/app"
+	"github.com/bketelsen/erasmus/packages/model"
 )
 
 func newRootCommand() *cobra.Command {

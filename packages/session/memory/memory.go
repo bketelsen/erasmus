@@ -7,9 +7,9 @@ import (
 	"sync"
 	"time"
 
-	"erasmus/packages/message"
-	"erasmus/packages/model"
-	"erasmus/packages/session"
+	"github.com/bketelsen/erasmus/packages/message"
+	"github.com/bketelsen/erasmus/packages/model"
+	"github.com/bketelsen/erasmus/packages/session"
 )
 
 // Session is an in-memory implementation of session.Session.

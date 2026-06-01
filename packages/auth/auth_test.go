@@ -4,7 +4,7 @@ import (
 	"context"
 	"testing"
 
-	"erasmus/packages/auth"
+	"github.com/bketelsen/erasmus/packages/auth"
 )
 
 func TestMemoryStoreSetGetListDelete(t *testing.T) {

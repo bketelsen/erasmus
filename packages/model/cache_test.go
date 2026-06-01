@@ -6,7 +6,7 @@ import (
 	"testing"
 	"time"
 
-	"erasmus/packages/model"
+	"github.com/bketelsen/erasmus/packages/model"
 )
 
 func TestFileCacheRoundTripsProviderModels(t *testing.T) {

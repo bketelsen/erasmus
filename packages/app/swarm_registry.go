@@ -9,8 +9,8 @@ import (
 	"strings"
 	"time"
 
-	"erasmus/packages/config"
-	"erasmus/packages/swarm"
+	"github.com/bketelsen/erasmus/packages/config"
+	"github.com/bketelsen/erasmus/packages/swarm"
 )
 
 // SwarmServerRecord is persisted metadata for a swarm socket server.

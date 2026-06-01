@@ -5,9 +5,9 @@ import (
 	"context"
 	"encoding/json"
 
-	"erasmus/packages/message"
-	"erasmus/packages/model"
-	"erasmus/packages/tool"
+	"github.com/bketelsen/erasmus/packages/message"
+	"github.com/bketelsen/erasmus/packages/model"
+	"github.com/bketelsen/erasmus/packages/tool"
 )
 
 // Client streams normalized provider events for a request.

@@ -1,7 +1,7 @@
 // Package config defines user/app configuration shapes.
 package config
 
-import "erasmus/packages/model"
+import "github.com/bketelsen/erasmus/packages/model"
 
 // Config is the user-facing app configuration.
 type Config struct {

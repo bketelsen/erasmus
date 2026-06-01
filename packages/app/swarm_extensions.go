@@ -4,8 +4,8 @@ import (
 	"context"
 	"encoding/json"
 
-	"erasmus/packages/extension"
-	"erasmus/packages/swarm"
+	"github.com/bketelsen/erasmus/packages/extension"
+	"github.com/bketelsen/erasmus/packages/swarm"
 )
 
 func applyExtensionBackgroundActions(ctx context.Context, s *swarm.Swarm, actions []extension.HostAction) error {

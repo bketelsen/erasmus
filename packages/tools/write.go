@@ -6,9 +6,9 @@ import (
 	"os"
 	"path/filepath"
 
-	"erasmus/packages/message"
-	"erasmus/packages/sandbox"
-	"erasmus/packages/tool"
+	"github.com/bketelsen/erasmus/packages/message"
+	"github.com/bketelsen/erasmus/packages/sandbox"
+	"github.com/bketelsen/erasmus/packages/tool"
 )
 
 // WriteTool writes text files inside the sandbox.

@@ -12,9 +12,9 @@ import (
 	"sort"
 	"strings"
 
-	"erasmus/packages/message"
-	"erasmus/packages/model"
-	"erasmus/packages/provider"
+	"github.com/bketelsen/erasmus/packages/message"
+	"github.com/bketelsen/erasmus/packages/model"
+	"github.com/bketelsen/erasmus/packages/provider"
 )
 
 const defaultBaseURL = "https://api.openai.com/v1"

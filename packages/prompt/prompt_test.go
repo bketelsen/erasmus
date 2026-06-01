@@ -5,8 +5,8 @@ import (
 	"strings"
 	"testing"
 
-	"erasmus/packages/prompt"
-	"erasmus/packages/skill"
+	"github.com/bketelsen/erasmus/packages/prompt"
+	"github.com/bketelsen/erasmus/packages/skill"
 )
 
 func TestStaticBuilderIncludesSkills(t *testing.T) {

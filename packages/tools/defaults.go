@@ -1,8 +1,8 @@
 package tools
 
 import (
-	"erasmus/packages/sandbox"
-	"erasmus/packages/tool"
+	"github.com/bketelsen/erasmus/packages/sandbox"
+	"github.com/bketelsen/erasmus/packages/tool"
 )
 
 // DefaultRegistry returns the built-in coding tools for a sandbox policy.

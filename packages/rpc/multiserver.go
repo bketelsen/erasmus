@@ -8,13 +8,13 @@ import (
 	"io"
 	"sync"
 
-	"erasmus/packages/auth"
-	"erasmus/packages/compact"
-	"erasmus/packages/event"
-	"erasmus/packages/harness"
-	"erasmus/packages/model"
-	"erasmus/packages/session"
-	"erasmus/packages/skill"
+	"github.com/bketelsen/erasmus/packages/auth"
+	"github.com/bketelsen/erasmus/packages/compact"
+	"github.com/bketelsen/erasmus/packages/event"
+	"github.com/bketelsen/erasmus/packages/harness"
+	"github.com/bketelsen/erasmus/packages/model"
+	"github.com/bketelsen/erasmus/packages/session"
+	"github.com/bketelsen/erasmus/packages/skill"
 )
 
 // RuntimeFactory creates a runtime for a multi-runtime RPC server.

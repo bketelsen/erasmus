@@ -9,9 +9,9 @@ import (
 	"sort"
 	"strings"
 
-	"erasmus/packages/message"
-	"erasmus/packages/session"
-	"erasmus/packages/session/jsonl"
+	"github.com/bketelsen/erasmus/packages/message"
+	"github.com/bketelsen/erasmus/packages/session"
+	"github.com/bketelsen/erasmus/packages/session/jsonl"
 )
 
 // SessionListEntry is safe display metadata for a JSONL session file.

@@ -7,8 +7,8 @@ import (
 	"os"
 	"strings"
 
-	"erasmus/packages/auth"
-	"erasmus/packages/config"
+	"github.com/bketelsen/erasmus/packages/auth"
+	"github.com/bketelsen/erasmus/packages/config"
 )
 
 // ServeSwarmSocket serves a long-lived swarm controller over a local socket.

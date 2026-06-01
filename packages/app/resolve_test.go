@@ -7,12 +7,12 @@ import (
 	"testing"
 	"time"
 
-	"erasmus/packages/app"
-	"erasmus/packages/auth"
-	"erasmus/packages/config"
-	"erasmus/packages/model"
-	"erasmus/packages/provider"
-	"erasmus/packages/session/memory"
+	"github.com/bketelsen/erasmus/packages/app"
+	"github.com/bketelsen/erasmus/packages/auth"
+	"github.com/bketelsen/erasmus/packages/config"
+	"github.com/bketelsen/erasmus/packages/model"
+	"github.com/bketelsen/erasmus/packages/provider"
+	"github.com/bketelsen/erasmus/packages/session/memory"
 )
 
 func TestResolveHarnessConfigDefaultsFakeModelAndTools(t *testing.T) {

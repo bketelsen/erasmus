@@ -5,8 +5,8 @@ import (
 	"context"
 	"strings"
 
-	"erasmus/packages/message"
-	"erasmus/packages/provider"
+	"github.com/bketelsen/erasmus/packages/message"
+	"github.com/bketelsen/erasmus/packages/provider"
 )
 
 // Options controls compaction.

@@ -5,7 +5,7 @@ import (
 	"path/filepath"
 	"testing"
 
-	"erasmus/packages/auth"
+	"github.com/bketelsen/erasmus/packages/auth"
 )
 
 func TestFileStorePersists(t *testing.T) {

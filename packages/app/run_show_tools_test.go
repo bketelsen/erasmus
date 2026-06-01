@@ -8,7 +8,7 @@ import (
 	"strings"
 	"testing"
 
-	"erasmus/packages/app"
+	"github.com/bketelsen/erasmus/packages/app"
 )
 
 func TestRunFakeShowTools(t *testing.T) {

@@ -5,13 +5,13 @@ import (
 	"encoding/json"
 	"testing"
 
-	"erasmus/packages/harness"
-	"erasmus/packages/loop"
-	"erasmus/packages/message"
-	"erasmus/packages/model"
-	"erasmus/packages/provider"
-	"erasmus/packages/session/memory"
-	"erasmus/packages/tool"
+	"github.com/bketelsen/erasmus/packages/harness"
+	"github.com/bketelsen/erasmus/packages/loop"
+	"github.com/bketelsen/erasmus/packages/message"
+	"github.com/bketelsen/erasmus/packages/model"
+	"github.com/bketelsen/erasmus/packages/provider"
+	"github.com/bketelsen/erasmus/packages/session/memory"
+	"github.com/bketelsen/erasmus/packages/tool"
 )
 
 func TestHarnessConfirmToolCallCanDeny(t *testing.T) {

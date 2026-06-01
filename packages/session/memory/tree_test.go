@@ -4,8 +4,8 @@ import (
 	"context"
 	"testing"
 
-	"erasmus/packages/message"
-	"erasmus/packages/session"
+	"github.com/bketelsen/erasmus/packages/message"
+	"github.com/bketelsen/erasmus/packages/session"
 )
 
 func TestTreeMoveToAndBranch(t *testing.T) {

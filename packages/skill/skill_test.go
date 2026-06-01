@@ -7,7 +7,7 @@ import (
 	"strings"
 	"testing"
 
-	"erasmus/packages/skill"
+	"github.com/bketelsen/erasmus/packages/skill"
 )
 
 func TestDiscoverAndFormatInvocation(t *testing.T) {

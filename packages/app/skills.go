@@ -7,7 +7,7 @@ import (
 	"path/filepath"
 	"strings"
 
-	"erasmus/packages/skill"
+	"github.com/bketelsen/erasmus/packages/skill"
 )
 
 // SkillDirs returns configured skill discovery directories.

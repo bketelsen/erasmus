@@ -5,8 +5,8 @@ import (
 	"path/filepath"
 	"testing"
 
-	"erasmus/packages/app"
-	"erasmus/packages/config"
+	"github.com/bketelsen/erasmus/packages/app"
+	"github.com/bketelsen/erasmus/packages/config"
 )
 
 func TestConfigServices(t *testing.T) {

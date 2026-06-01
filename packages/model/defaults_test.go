@@ -4,7 +4,7 @@ import (
 	"slices"
 	"testing"
 
-	"erasmus/packages/model"
+	"github.com/bketelsen/erasmus/packages/model"
 )
 
 func TestDefaultCatalogCodexModels(t *testing.T) {

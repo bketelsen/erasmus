@@ -7,9 +7,9 @@ import (
 	"net/http/httptest"
 	"testing"
 
-	"erasmus/packages/message"
-	"erasmus/packages/model"
-	"erasmus/packages/provider"
+	"github.com/bketelsen/erasmus/packages/message"
+	"github.com/bketelsen/erasmus/packages/model"
+	"github.com/bketelsen/erasmus/packages/provider"
 )
 
 func TestStreamChatCompletionSSE(t *testing.T) {

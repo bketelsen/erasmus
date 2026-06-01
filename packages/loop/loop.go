@@ -8,11 +8,11 @@ import (
 	"sync"
 	"time"
 
-	"erasmus/packages/event"
-	"erasmus/packages/message"
-	"erasmus/packages/model"
-	"erasmus/packages/provider"
-	"erasmus/packages/tool"
+	"github.com/bketelsen/erasmus/packages/event"
+	"github.com/bketelsen/erasmus/packages/message"
+	"github.com/bketelsen/erasmus/packages/model"
+	"github.com/bketelsen/erasmus/packages/provider"
+	"github.com/bketelsen/erasmus/packages/tool"
 )
 
 // Context is the immutable-ish context for a loop run.

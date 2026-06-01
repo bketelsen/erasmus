@@ -44,6 +44,7 @@ This file is the project-level map for contributors and coding agents. More spec
 ## Editing Rules
 
 - Keep changes scoped. Avoid unrelated refactors.
+- Hard requirement: every commit must pass `make ci` error-free before it is created.
 - Add tests before implementation for behavior changes.
 - Use `gofmt` only on Go files.
 - Prefer existing package patterns over new abstractions.

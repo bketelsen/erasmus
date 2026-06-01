@@ -4,10 +4,10 @@ package proto
 import (
 	"encoding/json"
 
-	"erasmus/packages/event"
-	"erasmus/packages/message"
-	"erasmus/packages/provider"
-	"erasmus/packages/tool"
+	"github.com/bketelsen/erasmus/packages/event"
+	"github.com/bketelsen/erasmus/packages/message"
+	"github.com/bketelsen/erasmus/packages/provider"
+	"github.com/bketelsen/erasmus/packages/tool"
 )
 
 // Frame is a generic JSON-line protocol frame.

@@ -10,9 +10,9 @@ import (
 	"testing"
 	"time"
 
-	"erasmus/packages/auth"
-	"erasmus/packages/config"
-	"erasmus/packages/model"
+	"github.com/bketelsen/erasmus/packages/auth"
+	"github.com/bketelsen/erasmus/packages/config"
+	"github.com/bketelsen/erasmus/packages/model"
 )
 
 func TestRootCommandVersionOutput(t *testing.T) {

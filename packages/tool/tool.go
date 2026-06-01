@@ -5,7 +5,7 @@ import (
 	"context"
 	"encoding/json"
 
-	"erasmus/packages/message"
+	"github.com/bketelsen/erasmus/packages/message"
 )
 
 // ExecutionMode controls whether tool batches may run concurrently.

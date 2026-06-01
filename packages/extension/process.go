@@ -10,10 +10,10 @@ import (
 	"sync"
 	"time"
 
-	"erasmus/packages/event"
-	"erasmus/packages/extension/proto"
-	"erasmus/packages/message"
-	"erasmus/packages/tool"
+	"github.com/bketelsen/erasmus/packages/event"
+	"github.com/bketelsen/erasmus/packages/extension/proto"
+	"github.com/bketelsen/erasmus/packages/message"
+	"github.com/bketelsen/erasmus/packages/tool"
 )
 
 // Process hosts one extension subprocess speaking JSON-line proto.Frame values.

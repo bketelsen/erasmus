@@ -5,8 +5,8 @@ import (
 	"path/filepath"
 	"testing"
 
-	"erasmus/packages/config"
-	"erasmus/packages/model"
+	"github.com/bketelsen/erasmus/packages/config"
+	"github.com/bketelsen/erasmus/packages/model"
 )
 
 func TestLoadSaveConfig(t *testing.T) {

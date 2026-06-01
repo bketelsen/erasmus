@@ -5,14 +5,14 @@ import (
 	"path/filepath"
 	"testing"
 
-	"erasmus/packages/event"
-	"erasmus/packages/harness"
-	"erasmus/packages/message"
-	"erasmus/packages/model"
-	"erasmus/packages/provider"
-	"erasmus/packages/session"
-	"erasmus/packages/session/jsonl"
-	"erasmus/packages/session/memory"
+	"github.com/bketelsen/erasmus/packages/event"
+	"github.com/bketelsen/erasmus/packages/harness"
+	"github.com/bketelsen/erasmus/packages/message"
+	"github.com/bketelsen/erasmus/packages/model"
+	"github.com/bketelsen/erasmus/packages/provider"
+	"github.com/bketelsen/erasmus/packages/session"
+	"github.com/bketelsen/erasmus/packages/session/jsonl"
+	"github.com/bketelsen/erasmus/packages/session/memory"
 )
 
 func TestHarnessPersistsMessagesAndReopenContinue(t *testing.T) {

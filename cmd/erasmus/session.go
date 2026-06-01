@@ -5,7 +5,7 @@ import (
 
 	"github.com/spf13/cobra"
 
-	"erasmus/packages/app"
+	"github.com/bketelsen/erasmus/packages/app"
 )
 
 func newSessionsCommand() *cobra.Command {

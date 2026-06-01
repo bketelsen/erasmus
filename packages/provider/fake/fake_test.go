@@ -6,9 +6,9 @@ import (
 	"testing"
 	"time"
 
-	"erasmus/packages/model"
-	"erasmus/packages/provider"
-	"erasmus/packages/provider/fake"
+	"github.com/bketelsen/erasmus/packages/model"
+	"github.com/bketelsen/erasmus/packages/provider"
+	"github.com/bketelsen/erasmus/packages/provider/fake"
 )
 
 func TestClientStreamsScript(t *testing.T) {

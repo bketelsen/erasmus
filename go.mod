@@ -1,4 +1,4 @@
-module erasmus
+module github.com/bketelsen/erasmus
 
 go 1.26.3
 

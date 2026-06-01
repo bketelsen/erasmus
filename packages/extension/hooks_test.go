@@ -5,11 +5,11 @@ import (
 	"encoding/json"
 	"testing"
 
-	"erasmus/packages/extension"
-	"erasmus/packages/extension/proto"
-	"erasmus/packages/loop"
-	"erasmus/packages/message"
-	"erasmus/packages/tool"
+	"github.com/bketelsen/erasmus/packages/extension"
+	"github.com/bketelsen/erasmus/packages/extension/proto"
+	"github.com/bketelsen/erasmus/packages/loop"
+	"github.com/bketelsen/erasmus/packages/message"
+	"github.com/bketelsen/erasmus/packages/tool"
 )
 
 func TestManagerHooksInterceptors(t *testing.T) {

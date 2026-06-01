@@ -4,7 +4,7 @@ import (
 	"encoding/json"
 	"testing"
 
-	"erasmus/packages/extension/proto"
+	"github.com/bketelsen/erasmus/packages/extension/proto"
 )
 
 func TestEncodeDecodeFrame(t *testing.T) {

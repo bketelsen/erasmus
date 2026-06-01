@@ -7,10 +7,10 @@ import (
 	"testing"
 	"time"
 
-	"erasmus/packages/message"
-	"erasmus/packages/model"
-	"erasmus/packages/session"
-	"erasmus/packages/session/jsonl"
+	"github.com/bketelsen/erasmus/packages/message"
+	"github.com/bketelsen/erasmus/packages/model"
+	"github.com/bketelsen/erasmus/packages/session"
+	"github.com/bketelsen/erasmus/packages/session/jsonl"
 )
 
 func TestRoundTripReopenBuildContext(t *testing.T) {

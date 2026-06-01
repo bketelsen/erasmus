@@ -9,7 +9,7 @@ import (
 	"strings"
 	"testing"
 
-	"erasmus/packages/app"
+	"github.com/bketelsen/erasmus/packages/app"
 )
 
 func TestExtensionExecProcess(t *testing.T) {

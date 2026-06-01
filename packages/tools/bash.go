@@ -8,9 +8,9 @@ import (
 	"os/exec"
 	"time"
 
-	"erasmus/packages/message"
-	"erasmus/packages/sandbox"
-	"erasmus/packages/tool"
+	"github.com/bketelsen/erasmus/packages/message"
+	"github.com/bketelsen/erasmus/packages/sandbox"
+	"github.com/bketelsen/erasmus/packages/tool"
 )
 
 // BashTool runs shell commands from the sandbox root.

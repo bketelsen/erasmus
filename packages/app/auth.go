@@ -6,7 +6,7 @@ import (
 	"io"
 	"time"
 
-	"erasmus/packages/auth"
+	"github.com/bketelsen/erasmus/packages/auth"
 )
 
 // Login stores a provider API key.

@@ -6,9 +6,9 @@ import (
 	"net/http"
 	"strings"
 
-	"erasmus/packages/auth"
-	"erasmus/packages/provider/openai"
-	"erasmus/packages/provider/openaicodex"
+	"github.com/bketelsen/erasmus/packages/auth"
+	"github.com/bketelsen/erasmus/packages/provider/openai"
+	"github.com/bketelsen/erasmus/packages/provider/openaicodex"
 )
 
 const defaultBaseURL = "https://api.individual.githubcopilot.com"

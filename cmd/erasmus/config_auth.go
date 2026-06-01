@@ -8,9 +8,9 @@ import (
 
 	"github.com/spf13/cobra"
 
-	"erasmus/packages/app"
-	"erasmus/packages/auth"
-	"erasmus/packages/config"
+	"github.com/bketelsen/erasmus/packages/app"
+	"github.com/bketelsen/erasmus/packages/auth"
+	"github.com/bketelsen/erasmus/packages/config"
 )
 
 func newLoginCommand() *cobra.Command {

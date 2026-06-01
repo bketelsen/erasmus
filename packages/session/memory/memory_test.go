@@ -4,9 +4,9 @@ import (
 	"context"
 	"testing"
 
-	"erasmus/packages/message"
-	"erasmus/packages/model"
-	"erasmus/packages/session/memory"
+	"github.com/bketelsen/erasmus/packages/message"
+	"github.com/bketelsen/erasmus/packages/model"
+	"github.com/bketelsen/erasmus/packages/session/memory"
 )
 
 func TestSessionBuildContext(t *testing.T) {

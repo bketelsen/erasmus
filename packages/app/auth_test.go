@@ -8,8 +8,8 @@ import (
 	"testing"
 	"time"
 
-	"erasmus/packages/app"
-	"erasmus/packages/auth"
+	"github.com/bketelsen/erasmus/packages/app"
+	"github.com/bketelsen/erasmus/packages/auth"
 )
 
 func TestAuthServices(t *testing.T) {

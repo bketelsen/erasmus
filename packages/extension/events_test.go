@@ -3,9 +3,9 @@ package extension_test
 import (
 	"testing"
 
-	"erasmus/packages/event"
-	"erasmus/packages/extension"
-	"erasmus/packages/extension/proto"
+	"github.com/bketelsen/erasmus/packages/event"
+	"github.com/bketelsen/erasmus/packages/extension"
+	"github.com/bketelsen/erasmus/packages/extension/proto"
 )
 
 func TestManagerPublishesExtensionUpdatesForRegistrations(t *testing.T) {

@@ -6,11 +6,11 @@ import (
 	"strings"
 	"testing"
 
-	"erasmus/packages/harness"
-	"erasmus/packages/message"
-	"erasmus/packages/model"
-	"erasmus/packages/provider"
-	"erasmus/packages/session/memory"
+	"github.com/bketelsen/erasmus/packages/harness"
+	"github.com/bketelsen/erasmus/packages/message"
+	"github.com/bketelsen/erasmus/packages/model"
+	"github.com/bketelsen/erasmus/packages/provider"
+	"github.com/bketelsen/erasmus/packages/session/memory"
 
 	tea "charm.land/bubbletea/v2"
 	"charm.land/lipgloss/v2"

@@ -6,17 +6,17 @@ import (
 	"fmt"
 	"io"
 
-	"erasmus/packages/auth"
-	"erasmus/packages/config"
-	"erasmus/packages/event"
-	"erasmus/packages/harness"
-	"erasmus/packages/model"
-	"erasmus/packages/rpc"
-	"erasmus/packages/session"
-	"erasmus/packages/session/jsonl"
-	"erasmus/packages/session/memory"
-	"erasmus/packages/skill"
-	"erasmus/packages/tool"
+	"github.com/bketelsen/erasmus/packages/auth"
+	"github.com/bketelsen/erasmus/packages/config"
+	"github.com/bketelsen/erasmus/packages/event"
+	"github.com/bketelsen/erasmus/packages/harness"
+	"github.com/bketelsen/erasmus/packages/model"
+	"github.com/bketelsen/erasmus/packages/rpc"
+	"github.com/bketelsen/erasmus/packages/session"
+	"github.com/bketelsen/erasmus/packages/session/jsonl"
+	"github.com/bketelsen/erasmus/packages/session/memory"
+	"github.com/bketelsen/erasmus/packages/skill"
+	"github.com/bketelsen/erasmus/packages/tool"
 )
 
 // RunRPCConfigured serves a multi-runtime JSON-lines RPC server using saved config/auth provider resolution.

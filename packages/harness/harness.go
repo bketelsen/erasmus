@@ -6,17 +6,17 @@ import (
 	"fmt"
 	"sync"
 
-	"erasmus/packages/agent"
-	"erasmus/packages/compact"
-	"erasmus/packages/event"
-	"erasmus/packages/loop"
-	"erasmus/packages/message"
-	"erasmus/packages/model"
-	"erasmus/packages/prompt"
-	"erasmus/packages/provider"
-	"erasmus/packages/session"
-	"erasmus/packages/skill"
-	"erasmus/packages/tool"
+	"github.com/bketelsen/erasmus/packages/agent"
+	"github.com/bketelsen/erasmus/packages/compact"
+	"github.com/bketelsen/erasmus/packages/event"
+	"github.com/bketelsen/erasmus/packages/loop"
+	"github.com/bketelsen/erasmus/packages/message"
+	"github.com/bketelsen/erasmus/packages/model"
+	"github.com/bketelsen/erasmus/packages/prompt"
+	"github.com/bketelsen/erasmus/packages/provider"
+	"github.com/bketelsen/erasmus/packages/session"
+	"github.com/bketelsen/erasmus/packages/skill"
+	"github.com/bketelsen/erasmus/packages/tool"
 )
 
 // Config configures a Harness.

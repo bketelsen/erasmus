@@ -10,7 +10,7 @@ import (
 	"strings"
 	"testing"
 
-	"erasmus/packages/app"
+	"github.com/bketelsen/erasmus/packages/app"
 )
 
 func TestExtensionListProcess(t *testing.T) {

@@ -6,11 +6,11 @@ import (
 	"path/filepath"
 	"time"
 
-	"erasmus/packages/auth"
-	"erasmus/packages/config"
-	"erasmus/packages/model"
-	"erasmus/packages/provider/githubcopilot"
-	"erasmus/packages/provider/openai"
+	"github.com/bketelsen/erasmus/packages/auth"
+	"github.com/bketelsen/erasmus/packages/config"
+	"github.com/bketelsen/erasmus/packages/model"
+	"github.com/bketelsen/erasmus/packages/provider/githubcopilot"
+	"github.com/bketelsen/erasmus/packages/provider/openai"
 )
 
 // Models returns all known models from catalog, using the default catalog when nil.

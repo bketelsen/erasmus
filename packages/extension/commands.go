@@ -6,7 +6,7 @@ import (
 	"fmt"
 	"sync/atomic"
 
-	"erasmus/packages/extension/proto"
+	"github.com/bketelsen/erasmus/packages/extension/proto"
 )
 
 // Command runs extension command calls.

@@ -9,9 +9,9 @@ import (
 	"strings"
 	"testing"
 
-	"erasmus/packages/extension/proto"
-	"erasmus/packages/extension/sdk"
-	"erasmus/packages/skill"
+	"github.com/bketelsen/erasmus/packages/extension/proto"
+	"github.com/bketelsen/erasmus/packages/extension/sdk"
+	"github.com/bketelsen/erasmus/packages/skill"
 )
 
 func TestRunWithIORegistersAndDispatchesToolsAndCommands(t *testing.T) {

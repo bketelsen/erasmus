@@ -6,11 +6,11 @@ import (
 	"strings"
 	"testing"
 
-	"erasmus/packages/harness"
-	"erasmus/packages/model"
-	"erasmus/packages/provider"
-	"erasmus/packages/session/memory"
-	"erasmus/packages/skill"
+	"github.com/bketelsen/erasmus/packages/harness"
+	"github.com/bketelsen/erasmus/packages/model"
+	"github.com/bketelsen/erasmus/packages/provider"
+	"github.com/bketelsen/erasmus/packages/session/memory"
+	"github.com/bketelsen/erasmus/packages/skill"
 )
 
 func TestMultiServerRuntimeLifecycle(t *testing.T) {

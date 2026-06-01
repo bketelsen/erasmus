@@ -11,15 +11,15 @@ import (
 	"sync/atomic"
 	"time"
 
-	"erasmus/packages/config"
-	"erasmus/packages/event"
-	"erasmus/packages/extension"
-	extproto "erasmus/packages/extension/proto"
-	"erasmus/packages/harness"
-	"erasmus/packages/message"
-	"erasmus/packages/provider"
-	"erasmus/packages/skill"
-	"erasmus/packages/tool"
+	"github.com/bketelsen/erasmus/packages/config"
+	"github.com/bketelsen/erasmus/packages/event"
+	"github.com/bketelsen/erasmus/packages/extension"
+	extproto "github.com/bketelsen/erasmus/packages/extension/proto"
+	"github.com/bketelsen/erasmus/packages/harness"
+	"github.com/bketelsen/erasmus/packages/message"
+	"github.com/bketelsen/erasmus/packages/provider"
+	"github.com/bketelsen/erasmus/packages/skill"
+	"github.com/bketelsen/erasmus/packages/tool"
 )
 
 // ExtensionListProcess starts an extension process and prints registered tools/commands.

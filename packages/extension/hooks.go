@@ -3,7 +3,7 @@ package extension
 import (
 	"context"
 
-	"erasmus/packages/loop"
+	"github.com/bketelsen/erasmus/packages/loop"
 )
 
 // ToolInterceptor can inspect or modify tool calls/results.

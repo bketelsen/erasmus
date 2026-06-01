@@ -9,9 +9,9 @@ import (
 	"strings"
 	"time"
 
-	"erasmus/packages/event"
-	"erasmus/packages/harness"
-	"erasmus/packages/model"
+	"github.com/bketelsen/erasmus/packages/event"
+	"github.com/bketelsen/erasmus/packages/harness"
+	"github.com/bketelsen/erasmus/packages/model"
 
 	"charm.land/bubbles/v2/textarea"
 	"charm.land/bubbles/v2/viewport"

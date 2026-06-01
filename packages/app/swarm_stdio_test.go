@@ -9,8 +9,8 @@ import (
 	"strings"
 	"testing"
 
-	"erasmus/packages/auth"
-	"erasmus/packages/config"
+	"github.com/bketelsen/erasmus/packages/auth"
+	"github.com/bketelsen/erasmus/packages/config"
 )
 
 func TestServeSwarmStdioSpawnWaitListSendClose(t *testing.T) {

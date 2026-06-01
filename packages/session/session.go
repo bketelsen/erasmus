@@ -5,8 +5,8 @@ import (
 	"context"
 	"time"
 
-	"erasmus/packages/message"
-	"erasmus/packages/model"
+	"github.com/bketelsen/erasmus/packages/message"
+	"github.com/bketelsen/erasmus/packages/model"
 )
 
 // EntryID identifies an entry in a session log.

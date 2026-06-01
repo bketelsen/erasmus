@@ -7,11 +7,11 @@ import (
 	"net/http/httptest"
 	"testing"
 
-	"erasmus/packages/auth"
-	"erasmus/packages/message"
-	"erasmus/packages/model"
-	"erasmus/packages/provider"
-	"erasmus/packages/tool"
+	"github.com/bketelsen/erasmus/packages/auth"
+	"github.com/bketelsen/erasmus/packages/message"
+	"github.com/bketelsen/erasmus/packages/model"
+	"github.com/bketelsen/erasmus/packages/provider"
+	"github.com/bketelsen/erasmus/packages/tool"
 )
 
 func TestChatCompletionsStreamUsesCopilotHeaders(t *testing.T) {

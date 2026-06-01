@@ -7,12 +7,12 @@ import (
 	"sync"
 	"time"
 
-	"erasmus/packages/event"
-	"erasmus/packages/loop"
-	"erasmus/packages/message"
-	"erasmus/packages/model"
-	"erasmus/packages/provider"
-	"erasmus/packages/tool"
+	"github.com/bketelsen/erasmus/packages/event"
+	"github.com/bketelsen/erasmus/packages/loop"
+	"github.com/bketelsen/erasmus/packages/message"
+	"github.com/bketelsen/erasmus/packages/model"
+	"github.com/bketelsen/erasmus/packages/provider"
+	"github.com/bketelsen/erasmus/packages/tool"
 )
 
 // QueueMode controls future steering/follow-up queue behavior.

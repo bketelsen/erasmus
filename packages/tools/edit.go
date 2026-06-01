@@ -7,9 +7,9 @@ import (
 	"os"
 	"strings"
 
-	"erasmus/packages/message"
-	"erasmus/packages/sandbox"
-	"erasmus/packages/tool"
+	"github.com/bketelsen/erasmus/packages/message"
+	"github.com/bketelsen/erasmus/packages/sandbox"
+	"github.com/bketelsen/erasmus/packages/tool"
 )
 
 // EditTool performs exact-match text replacements inside sandboxed files.

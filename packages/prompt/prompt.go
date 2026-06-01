@@ -5,10 +5,10 @@ import (
 	"context"
 	"strings"
 
-	"erasmus/packages/model"
-	"erasmus/packages/session"
-	"erasmus/packages/skill"
-	"erasmus/packages/tool"
+	"github.com/bketelsen/erasmus/packages/model"
+	"github.com/bketelsen/erasmus/packages/session"
+	"github.com/bketelsen/erasmus/packages/skill"
+	"github.com/bketelsen/erasmus/packages/tool"
 )
 
 // Builder builds a system prompt.

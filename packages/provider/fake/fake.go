@@ -5,7 +5,7 @@ import (
 	"context"
 	"time"
 
-	"erasmus/packages/provider"
+	"github.com/bketelsen/erasmus/packages/provider"
 )
 
 // Client streams a fixed script of provider events.

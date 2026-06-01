@@ -6,8 +6,8 @@ import (
 	"log"
 	"strings"
 
-	"erasmus/packages/extension/proto"
-	"erasmus/packages/extension/sdk"
+	"github.com/bketelsen/erasmus/packages/extension/proto"
+	"github.com/bketelsen/erasmus/packages/extension/sdk"
 )
 
 func main() {

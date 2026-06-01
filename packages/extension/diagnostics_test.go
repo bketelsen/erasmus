@@ -10,7 +10,7 @@ import (
 	"testing"
 	"time"
 
-	"erasmus/packages/extension"
+	"github.com/bketelsen/erasmus/packages/extension"
 )
 
 func TestProcessStartupDiagnosticsIncludeStderrAndInvalidStdout(t *testing.T) {

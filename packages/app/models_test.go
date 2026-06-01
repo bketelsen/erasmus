@@ -8,10 +8,10 @@ import (
 	"strings"
 	"testing"
 
-	"erasmus/packages/app"
-	"erasmus/packages/auth"
-	"erasmus/packages/config"
-	"erasmus/packages/model"
+	"github.com/bketelsen/erasmus/packages/app"
+	"github.com/bketelsen/erasmus/packages/auth"
+	"github.com/bketelsen/erasmus/packages/config"
+	"github.com/bketelsen/erasmus/packages/model"
 )
 
 func TestCatalogFromConfigAddsUserModels(t *testing.T) {
