@@ -1,0 +1,28 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+go_cmd="${GO:-go}"
+gocache="${GOCACHE:-/tmp/erasmus-gocache}"
+build_dir="${EXAMPLE_BUILD_DIR:-/tmp/erasmus-example-builds}"
+mkdir -p "$build_dir"
+
+example_dirs=()
+while IFS= read -r modfile; do
+	example_dirs+=("$(dirname "$modfile")")
+done < <(find "$repo_root/examples" -mindepth 2 -maxdepth 3 -name go.mod | sort)
+
+if [ "${#example_dirs[@]}" -eq 0 ]; then
+	printf '%s\n' "error: no Go examples found under examples/"
+	exit 1
+fi
+
+for dir in "${example_dirs[@]}"; do
+	rel="${dir#"$repo_root"/}"
+	printf 'example: %s\n' "$rel"
+	(
+		cd "$dir"
+		GOCACHE="$gocache" "$go_cmd" test ./...
+		GOCACHE="$gocache" "$go_cmd" build -buildvcs=false -o "$build_dir/$(basename "$dir")" .
+	)
+done

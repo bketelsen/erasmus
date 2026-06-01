@@ -12,7 +12,7 @@ GOLANGCI_LINT_CACHE ?= /tmp/erasmus-golangci-cache
 
 .DEFAULT_GOAL := help
 
-.PHONY: help paths doctor all ci test vet lint smoke build fmt tidy clean release-snapshot check-go check-golangci-lint check-goreleaser
+.PHONY: help paths doctor all ci test test-examples examples vet lint smoke build fmt tidy clean release-snapshot check-go check-golangci-lint check-goreleaser
 
 help:
 	@printf '%s\n' "Erasmus development targets"
@@ -22,10 +22,11 @@ help:
 	@printf '%s\n' ""
 	@printf '%s\n' "Common targets:"
 	@printf '%s\n' "  make test              run Go tests"
+	@printf '%s\n' "  make test-examples     test and build all examples"
 	@printf '%s\n' "  make lint              run golangci-lint"
 	@printf '%s\n' "  make smoke             run scripts/test smoke coverage"
 	@printf '%s\n' "  make build             build ./$(BINARY)"
-	@printf '%s\n' "  make ci                run test, vet, lint, smoke, and build"
+	@printf '%s\n' "  make ci                run test, vet, lint, smoke, examples, and build"
 	@printf '%s\n' "  make fmt               gofmt all Go packages"
 	@printf '%s\n' "  make tidy              run go mod tidy"
 	@printf '%s\n' "  make doctor            show resolved tool paths and versions"
@@ -57,10 +58,17 @@ doctor:
 
 all: test build
 
-ci: test vet lint smoke build
+ci: test vet lint smoke test-examples build
 
 test: check-go
 	@GOCACHE="$(GOCACHE)" "$(GO)" test ./...
+
+test-examples: check-go
+	@go_path="$$(if [ -x "$(GO)" ]; then printf '%s' "$(GO)"; else command -v "$(GO)"; fi)"; \
+		export PATH="$$(dirname "$$go_path"):$(BREW_PREFIX)/bin:$$PATH"; \
+		GO="$$go_path" GOCACHE="$(GOCACHE)" scripts/test-examples
+
+examples: test-examples
 
 vet: check-go
 	@GOCACHE="$(GOCACHE)" "$(GO)" vet ./...

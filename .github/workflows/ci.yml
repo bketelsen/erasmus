@@ -45,3 +45,6 @@ jobs:
 
       - name: Smoke tests
         run: make smoke
+
+      - name: Example validation
+        run: make test-examples
