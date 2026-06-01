@@ -8,7 +8,7 @@ Status: prerelease. APIs and file formats are still allowed to change before `v0
 
 - durable JSONL sessions with tree navigation and branching,
 - provider-independent message, tool, event, and session types,
-- OpenAI API-key and OpenAI Codex subscription provider paths,
+- OpenAI API-key, OpenAI Codex subscription, and experimental GitHub Copilot provider paths,
 - runtime model, reasoning, skill, and tool resource mutation,
 - compaction and checkpoints,
 - subprocess extensions with tools, commands, skills, hooks, resource actions, and runtime event subscriptions,
@@ -77,6 +77,7 @@ TUI sessions can be overridden with `--session`, `--memory`, or `ERASMUS_SESSION
 
 - [Architecture](docs/architecture.md)
 - [Harness API](docs/harness.md)
+- [Providers](docs/providers.md)
 - [Sessions](docs/sessions.md)
 - [Extensions](docs/extensions.md)
 - [RPC](docs/rpc.md)

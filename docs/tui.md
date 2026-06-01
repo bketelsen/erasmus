@@ -229,6 +229,7 @@ If provider/model changes fail, verify credentials:
 erasmus auth status
 erasmus login openai
 erasmus login openai-codex
+erasmus login github-copilot
 ```
 
 If sessions are not where expected, inspect the active session directory:
