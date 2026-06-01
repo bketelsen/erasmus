@@ -72,6 +72,37 @@ func TestChatCompletionsStreamUsesCopilotHeaders(t *testing.T) {
 	}
 }
 
+func TestDiscoverModelsUsesCopilotHeaders(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/models" {
+			t.Fatalf("path = %s", r.URL.Path)
+		}
+		if got := r.Header.Get("Authorization"); got != "Bearer copilot-token" {
+			t.Fatalf("authorization = %q", got)
+		}
+		for name, want := range auth.GitHubCopilotStaticHeaders() {
+			if got := r.Header.Get(name); got != want {
+				t.Fatalf("%s = %q, want %q", name, got, want)
+			}
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"data":[{"id":"gpt-4.1"},{"id":"custom-preview"}]}`))
+	}))
+	defer server.Close()
+
+	client, err := NewChatCompletions(Config{AccessToken: "copilot-token", BaseURL: server.URL, HTTPClient: server.Client()})
+	if err != nil {
+		t.Fatal(err)
+	}
+	models, err := client.DiscoverModels(context.Background(), "github-copilot")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(models) != 2 || models[0].Provider != "github-copilot" || models[0].ID != "custom-preview" || models[0].Source != "live" || models[1].ID != "gpt-4.1" {
+		t.Fatalf("models = %+v", models)
+	}
+}
+
 func TestResponsesStreamUsesCopilotHeaders(t *testing.T) {
 	var gotReq struct {
 		Model        string `json:"model"`

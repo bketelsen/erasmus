@@ -3,11 +3,14 @@ package main
 import (
 	"bytes"
 	"context"
+	"net/http"
+	"net/http/httptest"
 	"path/filepath"
 	"strings"
 	"testing"
 	"time"
 
+	"erasmus/packages/auth"
 	"erasmus/packages/config"
 	"erasmus/packages/model"
 )
@@ -207,6 +210,55 @@ func TestModelsRefreshFakePopulatesDefaultCache(t *testing.T) {
 		t.Fatal(err)
 	}
 	if got := out.String(); !strings.Contains(got, "fake/echo\tFake Echo") {
+		t.Fatalf("models output = %q", got)
+	}
+}
+
+func TestModelsRefreshGitHubCopilotPopulatesDefaultCache(t *testing.T) {
+	root := t.TempDir()
+	t.Setenv("ERASMUS_CONFIG_FILE", "")
+	t.Setenv("ERASMUS_AUTH_FILE", "")
+	t.Setenv("XDG_CACHE_HOME", filepath.Join(root, "cache"))
+	t.Setenv("XDG_DATA_HOME", filepath.Join(root, "data"))
+
+	server := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/models" {
+			t.Fatalf("path = %s", r.URL.Path)
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"data":[{"id":"claude-sonnet-4.5"},{"id":"gpt-5.3-codex"}]}`))
+	}))
+	defer server.Close()
+	oldDefaultClient := http.DefaultClient
+	http.DefaultClient = server.Client()
+	defer func() { http.DefaultClient = oldDefaultClient }()
+
+	cmd := newRootCommand()
+	if err := authStore().Set(context.Background(), auth.Credential{Provider: "github-copilot", OAuth: &auth.OAuthToken{AccessToken: "copilot-token;proxy-ep=" + strings.TrimPrefix(server.URL, "https://") + ";"}}); err != nil {
+		t.Fatal(err)
+	}
+
+	var out bytes.Buffer
+	cmd.SetOut(&out)
+	cmd.SetErr(&out)
+	cmd.SetArgs([]string{"models", "refresh", "github-copilot"})
+	if err := cmd.Execute(); err != nil {
+		t.Fatal(err)
+	}
+	if got := out.String(); !strings.Contains(got, "refreshed 2 models for github-copilot") {
+		t.Fatalf("refresh output = %q", got)
+	}
+
+	out.Reset()
+	cmd = newRootCommand()
+	cmd.SetOut(&out)
+	cmd.SetErr(&out)
+	cmd.SetArgs([]string{"models"})
+	if err := cmd.Execute(); err != nil {
+		t.Fatal(err)
+	}
+	got := out.String()
+	if !strings.Contains(got, "github-copilot/claude-sonnet-4.5\tClaude Sonnet 4.5") || !strings.Contains(got, "github-copilot/gpt-5.3-codex\tGPT-5.3-Codex") {
 		t.Fatalf("models output = %q", got)
 	}
 }

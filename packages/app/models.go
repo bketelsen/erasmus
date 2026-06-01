@@ -9,6 +9,7 @@ import (
 	"erasmus/packages/auth"
 	"erasmus/packages/config"
 	"erasmus/packages/model"
+	"erasmus/packages/provider/githubcopilot"
 	"erasmus/packages/provider/openai"
 )
 
@@ -121,9 +122,52 @@ func discoverProviderModels(ctx context.Context, provider string, store auth.Sto
 		return client.DiscoverModels(ctx, "openai")
 	case "openai-codex":
 		return nil, fmt.Errorf("openai-codex model discovery is not available; use built-in catalog models or configure a user model override")
+	case "github-copilot":
+		cred, err := credentialForProvider(ctx, store, "github-copilot")
+		if err != nil {
+			return nil, err
+		}
+		if cred.OAuth == nil {
+			return nil, fmt.Errorf("github-copilot requires OAuth credentials")
+		}
+		baseURL := auth.GitHubCopilotBaseURLFromToken(cred.OAuth.AccessToken)
+		client, err := githubcopilot.NewChatCompletions(githubcopilot.Config{AccessToken: cred.OAuth.AccessToken, BaseURL: baseURL})
+		if err != nil {
+			return nil, err
+		}
+		discovered, err := client.DiscoverModels(ctx, "github-copilot")
+		if err != nil {
+			return nil, err
+		}
+		return mergeDiscoveredModelMetadata("github-copilot", discovered, model.DefaultCatalog()), nil
 	default:
 		return nil, fmt.Errorf("model discovery for provider %q is not implemented", provider)
 	}
+}
+
+func mergeDiscoveredModelMetadata(provider string, discovered []model.Model, catalog model.Catalog) []model.Model {
+	out := make([]model.Model, 0, len(discovered))
+	for _, m := range discovered {
+		if m.ID == "" {
+			continue
+		}
+		if m.Provider == "" {
+			m.Provider = provider
+		}
+		merged := m
+		if catalog != nil {
+			if known, err := catalog.Find(m.Provider, m.ID); err == nil {
+				merged = known
+				merged.DiscoveredAt = m.DiscoveredAt
+			}
+		}
+		if merged.DisplayName == "" {
+			merged.DisplayName = merged.ID
+		}
+		merged.Source = "live"
+		out = append(out, merged)
+	}
+	return out
 }
 
 func mergeModels(models []model.Model, index map[string]int, incoming []model.Model) []model.Model {
