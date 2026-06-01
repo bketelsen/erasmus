@@ -60,11 +60,15 @@ The loop consumes only that normalized event stream.
 
 Frontends should construct and drive a `Harness` instead of constructing loops or providers directly. The harness emits canonical runtime events that RPC, TUI, swarm, and extensions can all consume.
 
+See [harness.md](harness.md) for the embedding API, runtime mutators, hooks, compaction, and session tree support.
+
 ## Sessions
 
 Sessions are durable transcript stores behind `packages/session`. The JSONL implementation in `packages/session/jsonl` records metadata, messages, usage, model/reasoning changes, active-tool changes, compactions, checkpoints, and tree movement.
 
 The harness persists new transcript messages from `AgentEnd` events. Session tree APIs let frontends inspect, move, and branch durable conversations without coupling to JSONL internals.
+
+See [sessions.md](sessions.md) for backend interfaces, JSONL behavior, tree navigation, compaction, and default storage paths.
 
 ## Tools And Skills
 
