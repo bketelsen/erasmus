@@ -4,6 +4,7 @@ import (
 	"context"
 	"embed"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"log"
 	"os"
@@ -12,7 +13,10 @@ import (
 	"sync"
 	"time"
 
+	erasmusapp "erasmus/packages/app"
+	"erasmus/packages/auth"
 	"erasmus/packages/compact"
+	"erasmus/packages/config"
 	"erasmus/packages/event"
 	"erasmus/packages/harness"
 	"erasmus/packages/message"
@@ -37,6 +41,13 @@ type EventRow struct {
 	When string
 	Kind string
 	Text string
+}
+
+type ChatMessage struct {
+	Role  string
+	Label string
+	Text  string
+	When  string
 }
 
 type AgentRow struct {
@@ -80,11 +91,23 @@ func (c *SkillCard) Use() {
 	c.Emit("AppendPrompt", " skill "+c.Name+" summarize this project")
 }
 
+type exampleOptions struct {
+	Live      bool
+	Provider  string
+	ModelID   string
+	Reasoning string
+	Config    string
+	Auth      string
+	Session   string
+	CWD       string
+}
+
 type App struct {
 	godom.Component
 
 	Title      string
 	PromptText string
+	ChatInput  string
 	Status     string
 	Error      string
 
@@ -103,18 +126,31 @@ type App struct {
 	Transcript    string
 	Summary       string
 
-	Tools  []ToolRow
-	Skills []SkillRow
-	Events []EventRow
-	Agents []AgentRow
+	ChatMessages []ChatMessage
+	Tools        []ToolRow
+	Skills       []SkillRow
+	Events       []EventRow
+	Agents       []AgentRow
 
-	harness *harness.Harness
-	swarm   *swarm.Swarm
-	session session.Session
-	mu      sync.Mutex
+	harness            *harness.Harness
+	swarm              *swarm.Swarm
+	session            session.Session
+	streamingChatIndex int
+	mu                 sync.Mutex
 }
 
 func NewApp(ctx context.Context) (*App, error) {
+	return NewAppWithOptions(ctx, exampleOptions{})
+}
+
+func NewAppWithOptions(ctx context.Context, opts exampleOptions) (*App, error) {
+	if opts.Live {
+		return NewLiveApp(ctx, opts)
+	}
+	return NewDemoApp(ctx)
+}
+
+func NewDemoApp(ctx context.Context) (*App, error) {
 	cwd, err := os.Getwd()
 	if err != nil {
 		return nil, err
@@ -163,20 +199,22 @@ func NewApp(ctx context.Context) (*App, error) {
 	}
 
 	app := &App{
-		Title:      "Erasmus godom console",
-		PromptText: "write .erasmus/examples/godom/notes.txt with hello from the browser console",
-		Status:     "ready",
-		Provider:   "fake",
-		ModelID:    "godom-demo",
-		Reasoning:  "medium",
-		SessionID:  sess.ID(),
-		CWD:        cwd,
-		AutoScroll: true,
-		harness:    h,
-		swarm:      nil,
-		session:    sess,
-		Tools:      toolRows(registry),
-		Skills:     skillRows(skills),
+		Title:              "Erasmus godom chat",
+		PromptText:         "write .erasmus/examples/godom/notes.txt with hello from the browser console",
+		ChatInput:          "Ask the demo assistant to summarize what it can do.",
+		Status:             "ready",
+		Provider:           "fake",
+		ModelID:            "godom-demo",
+		Reasoning:          "medium",
+		SessionID:          sess.ID(),
+		CWD:                cwd,
+		AutoScroll:         true,
+		harness:            h,
+		swarm:              nil,
+		session:            sess,
+		streamingChatIndex: -1,
+		Tools:              toolRows(registry),
+		Skills:             skillRows(skills),
 	}
 
 	s, err := newDemoSwarm(ctx, cwd, stateDir, registry, skills)
@@ -184,6 +222,87 @@ func NewApp(ctx context.Context) (*App, error) {
 		return nil, err
 	}
 	app.swarm = s
+	h.Subscribe(func(ev event.Event) { app.recordEvent(ev) })
+	app.refreshState(ctx)
+	return app, nil
+}
+
+func NewLiveApp(ctx context.Context, opts exampleOptions) (*App, error) {
+	cwd := opts.CWD
+	if cwd == "" {
+		var err error
+		cwd, err = os.Getwd()
+		if err != nil {
+			return nil, err
+		}
+	}
+	stateDir := filepath.Join(cwd, ".erasmus", "examples", "godom")
+	if err := os.MkdirAll(stateDir, 0o755); err != nil {
+		return nil, err
+	}
+	cfgPath := opts.Config
+	if cfgPath == "" {
+		cfgPath = defaultConfigPath()
+	}
+	authPath := opts.Auth
+	if authPath == "" {
+		authPath = defaultAuthPath()
+	}
+	cfg, err := erasmusapp.ConfigGet(ctx, cfgPath)
+	if err != nil {
+		return nil, err
+	}
+	overrides := config.Config{CWD: cwd, NoTools: true}
+	if opts.Provider != "" {
+		overrides.Provider = opts.Provider
+	}
+	if opts.ModelID != "" {
+		overrides.Model = opts.ModelID
+	}
+	if opts.Reasoning != "" {
+		overrides.Reasoning = opts.Reasoning
+	}
+	cfg = config.Merge(cfg, overrides)
+	if cfg.Provider == "" || cfg.Provider == "fake" {
+		return nil, errors.New("live mode requires a real provider; pass --provider or configure Erasmus with a non-fake provider")
+	}
+	sessionPath := opts.Session
+	if sessionPath == "" {
+		sessionPath = filepath.Join(stateDir, "live-session.jsonl")
+	}
+	sess, err := jsonl.Open(sessionPath, session.Metadata{ID: "godom-live", CWD: cwd})
+	if err != nil {
+		return nil, err
+	}
+	resolved, err := erasmusapp.ResolveHarnessConfig(ctx, erasmusapp.ResolveOptions{
+		Config:  cfg,
+		Session: sess,
+		Auth:    auth.NewFileStore(authPath),
+	})
+	if err != nil {
+		_ = sess.Close(ctx)
+		return nil, err
+	}
+	h, err := harness.New(ctx, resolved.Harness)
+	if err != nil {
+		_ = sess.Close(ctx)
+		return nil, err
+	}
+	app := &App{
+		Title:              "Erasmus live chat",
+		ChatInput:          "",
+		Status:             "ready",
+		Provider:           resolved.Model.Provider,
+		ModelID:            resolved.Model.ID,
+		Reasoning:          cfg.Reasoning,
+		SessionID:          sess.ID(),
+		CWD:                cwd,
+		AutoScroll:         true,
+		harness:            h,
+		session:            sess,
+		streamingChatIndex: -1,
+		Tools:              toolRows(resolved.Tools),
+	}
 	h.Subscribe(func(ev event.Event) { app.recordEvent(ev) })
 	app.refreshState(ctx)
 	return app, nil
@@ -220,9 +339,26 @@ func (a *App) SubmitPrompt() {
 	if text == "" || a.Running {
 		return
 	}
+	a.startPrompt(text)
+}
+
+func (a *App) SendChat() {
+	text := strings.TrimSpace(a.ChatInput)
+	if text == "" || a.Running {
+		return
+	}
+	a.ChatInput = ""
+	a.PromptText = text
+	a.ChatMessages = append(a.ChatMessages, ChatMessage{Role: "user", Label: "You", Text: text, When: time.Now().Format("15:04")})
+	a.startPrompt(text)
+}
+
+func (a *App) startPrompt(text string) {
 	a.Status = "running"
 	a.Error = ""
 	a.Running = true
+	a.LastAssistant = ""
+	a.streamingChatIndex = -1
 	go func() {
 		ctx := context.Background()
 		events, err := a.harness.Prompt(ctx, text, harness.PromptOptions{})
@@ -339,6 +475,10 @@ func (a *App) ReloadSkills() {
 }
 
 func (a *App) SpawnWorker() {
+	if a.swarm == nil {
+		a.setStatus("swarm unavailable", "live mode does not start the demo swarm")
+		return
+	}
 	go func() {
 		ctx := context.Background()
 		id := fmt.Sprintf("worker-%d", time.Now().Unix()%100000)
@@ -354,6 +494,10 @@ func (a *App) SpawnWorker() {
 }
 
 func (a *App) SendToFirstWorker() {
+	if a.swarm == nil {
+		a.setStatus("swarm unavailable", "live mode does not start the demo swarm")
+		return
+	}
 	go func() {
 		ctx := context.Background()
 		list, err := a.swarm.List(ctx)
@@ -386,15 +530,17 @@ func (a *App) ClearEvents() {
 func (a *App) recordEvent(ev event.Event) {
 	row := EventRow{When: time.Now().Format("15:04:05"), Kind: ev.Type(), Text: describeEvent(ev)}
 	a.mu.Lock()
-	if ev.Type() == "message_delta" {
-		a.LastAssistant += ev.(event.MessageDelta).Text
-	}
-	if ev.Type() == "agent_start" {
+	switch e := ev.(type) {
+	case event.MessageDelta:
+		a.LastAssistant += e.Text
+		a.appendAssistantDelta(e.Text)
+	case event.AgentStart:
 		a.Running = true
 		a.LastAssistant = ""
-	}
-	if ev.Type() == "agent_end" {
+		a.streamingChatIndex = -1
+	case event.AgentEnd:
 		a.Running = false
+		a.streamingChatIndex = -1
 	}
 	if u, ok := ev.(event.Usage); ok {
 		a.InputTokens = u.Cumulative.InputTokens
@@ -409,9 +555,24 @@ func (a *App) recordEvent(ev event.Event) {
 	a.Refresh()
 }
 
+func (a *App) appendAssistantDelta(text string) {
+	if text == "" {
+		return
+	}
+	if a.streamingChatIndex < 0 || a.streamingChatIndex >= len(a.ChatMessages) || a.ChatMessages[a.streamingChatIndex].Role != "assistant" {
+		a.ChatMessages = append(a.ChatMessages, ChatMessage{Role: "assistant", Label: "Assistant", Text: text, When: time.Now().Format("15:04")})
+		a.streamingChatIndex = len(a.ChatMessages) - 1
+		return
+	}
+	a.ChatMessages[a.streamingChatIndex].Text += text
+}
+
 func (a *App) refreshState(ctx context.Context) {
 	state := a.harness.State(ctx)
-	list, _ := a.swarm.List(ctx)
+	var list []swarm.Snapshot
+	if a.swarm != nil {
+		list, _ = a.swarm.List(ctx)
+	}
 	a.mu.Lock()
 	a.Provider = state.Agent.Model.Provider
 	a.ModelID = state.Agent.Model.ID
@@ -420,6 +581,8 @@ func (a *App) refreshState(ctx context.Context) {
 	a.CWD = state.Session.CWD
 	a.Running = state.Agent.IsStreaming
 	a.Transcript = transcript(state.Agent.Messages)
+	a.ChatMessages = chatMessages(state.Agent.Messages)
+	a.streamingChatIndex = -1
 	a.Agents = agentRows(list)
 	a.mu.Unlock()
 	a.Refresh()
@@ -563,6 +726,25 @@ func transcript(messages []message.Message) string {
 	return strings.TrimSpace(b.String())
 }
 
+func chatMessages(messages []message.Message) []ChatMessage {
+	rows := make([]ChatMessage, 0, len(messages))
+	for _, msg := range messages {
+		if msg.Role != message.RoleUser && msg.Role != message.RoleAssistant {
+			continue
+		}
+		text := strings.TrimSpace(contentText(msg.Content))
+		if text == "" {
+			continue
+		}
+		label := "Assistant"
+		if msg.Role == message.RoleUser {
+			label = "You"
+		}
+		rows = append(rows, ChatMessage{Role: string(msg.Role), Label: label, Text: text, When: ""})
+	}
+	return rows
+}
+
 func toolRows(reg tool.Registry) []ToolRow {
 	var rows []ToolRow
 	for _, t := range reg.List() {
@@ -614,8 +796,123 @@ func truncate(s string, n int) string {
 	return s[:n] + "…"
 }
 
+func parseExampleOptions(args []string) (exampleOptions, []string, error) {
+	var opts exampleOptions
+	remaining := make([]string, 0, len(args))
+	for i := 0; i < len(args); i++ {
+		arg := args[i]
+		switch {
+		case arg == "--live":
+			opts.Live = true
+		case strings.HasPrefix(arg, "--provider="):
+			opts.Provider = strings.TrimPrefix(arg, "--provider=")
+		case arg == "--provider":
+			value, next, err := nextArg(args, i, arg)
+			if err != nil {
+				return exampleOptions{}, nil, err
+			}
+			opts.Provider = value
+			i = next
+		case strings.HasPrefix(arg, "--model="):
+			opts.ModelID = strings.TrimPrefix(arg, "--model=")
+		case arg == "--model":
+			value, next, err := nextArg(args, i, arg)
+			if err != nil {
+				return exampleOptions{}, nil, err
+			}
+			opts.ModelID = value
+			i = next
+		case strings.HasPrefix(arg, "--reasoning="):
+			opts.Reasoning = strings.TrimPrefix(arg, "--reasoning=")
+		case arg == "--reasoning":
+			value, next, err := nextArg(args, i, arg)
+			if err != nil {
+				return exampleOptions{}, nil, err
+			}
+			opts.Reasoning = value
+			i = next
+		case strings.HasPrefix(arg, "--config="):
+			opts.Config = strings.TrimPrefix(arg, "--config=")
+		case arg == "--config":
+			value, next, err := nextArg(args, i, arg)
+			if err != nil {
+				return exampleOptions{}, nil, err
+			}
+			opts.Config = value
+			i = next
+		case strings.HasPrefix(arg, "--auth-file="):
+			opts.Auth = strings.TrimPrefix(arg, "--auth-file=")
+		case arg == "--auth-file":
+			value, next, err := nextArg(args, i, arg)
+			if err != nil {
+				return exampleOptions{}, nil, err
+			}
+			opts.Auth = value
+			i = next
+		case strings.HasPrefix(arg, "--session="):
+			opts.Session = strings.TrimPrefix(arg, "--session=")
+		case arg == "--session":
+			value, next, err := nextArg(args, i, arg)
+			if err != nil {
+				return exampleOptions{}, nil, err
+			}
+			opts.Session = value
+			i = next
+		default:
+			remaining = append(remaining, arg)
+		}
+	}
+	return opts, remaining, nil
+}
+
+func nextArg(args []string, i int, flag string) (string, int, error) {
+	if i+1 >= len(args) || strings.HasPrefix(args[i+1], "--") {
+		return "", i, fmt.Errorf("%s requires a value", flag)
+	}
+	return args[i+1], i + 1, nil
+}
+
+func defaultConfigPath() string {
+	if path := os.Getenv("ERASMUS_CONFIG_FILE"); path != "" {
+		return path
+	}
+	return filepath.Join(xdgConfigHome(), "erasmus", "config.json")
+}
+
+func defaultAuthPath() string {
+	if path := os.Getenv("ERASMUS_AUTH_FILE"); path != "" {
+		return path
+	}
+	return filepath.Join(xdgDataHome(), "erasmus", "auth.json")
+}
+
+func xdgConfigHome() string {
+	if dir := os.Getenv("XDG_CONFIG_HOME"); dir != "" {
+		return dir
+	}
+	if home, err := os.UserHomeDir(); err == nil && home != "" {
+		return filepath.Join(home, ".config")
+	}
+	return filepath.Join(os.TempDir(), "erasmus", "config")
+}
+
+func xdgDataHome() string {
+	if dir := os.Getenv("XDG_DATA_HOME"); dir != "" {
+		return dir
+	}
+	if home, err := os.UserHomeDir(); err == nil && home != "" {
+		return filepath.Join(home, ".local", "share")
+	}
+	return filepath.Join(os.TempDir(), "erasmus", "data")
+}
+
 func main() {
-	root, err := NewApp(context.Background())
+	opts, remaining, err := parseExampleOptions(os.Args[1:])
+	if err != nil {
+		log.Fatal(err)
+	}
+	os.Args = append([]string{os.Args[0]}, remaining...)
+	root, err := NewAppWithOptions(context.Background(), opts)
 	if err != nil {
 		log.Fatal(err)
 	}

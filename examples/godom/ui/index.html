@@ -3,128 +3,72 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>Erasmus godom console</title>
+  <title>Erasmus godom chat</title>
   <link rel="stylesheet" href="/style.css" />
 </head>
 <body>
-  <main class="shell">
-    <header class="hero">
+  <main class="app-shell">
+    <header class="topbar">
       <div>
-        <p class="eyebrow">Go-native local browser UI</p>
-        <h1 g-text="Title">Erasmus godom console</h1>
-        <p>
-          A single-binary example using godom plus Erasmus harness, sessions,
-          tools, skills, events, compaction, model/reasoning changes, and swarm.
-        </p>
+        <h1 g-text="Title">Erasmus godom chat</h1>
+        <p><span g-text="Provider"></span>/<span g-text="ModelID"></span> · reasoning <span g-text="Reasoning"></span> · session <span g-text="SessionID"></span></p>
       </div>
-      <div class="status-card">
-        <span class="pill" g-text="Status">ready</span>
-        <strong><span g-text="Provider"></span>/<span g-text="ModelID"></span></strong>
-        <small>reasoning <span g-text="Reasoning"></span> · session <span g-text="SessionID"></span></small>
+      <div class="status-line">
+        <span class="status-pill" g-text="Status">ready</span>
+        <span g-show="Running" class="running">running</span>
       </div>
     </header>
 
-    <section class="grid two">
-      <section class="panel composer">
-        <h2>Prompt</h2>
-        <textarea rows="5" g-bind="PromptText"></textarea>
-        <div class="actions">
-          <button class="primary" g-click="SubmitPrompt">Run prompt</button>
-          <button g-click="ContinueRun">Continue</button>
-          <button g-click="AbortRun">Abort</button>
-          <button g-click="CompactSession">Compact</button>
+    <section class="workspace">
+      <section class="chat-pane" aria-label="Chat">
+        <div class="history">
+          <article class="message" g-for="msg in ChatMessages">
+            <div class="message-meta">
+              <strong g-text="msg.Label"></strong>
+              <time g-text="msg.When"></time>
+            </div>
+            <p g-text="msg.Text"></p>
+          </article>
         </div>
-        <div class="actions">
-          <button g-click="SwitchModel">Switch model</button>
-          <button g-click="ToggleReasoning">Toggle reasoning</button>
-          <button g-click="ReloadSkills">Reload skills</button>
-        </div>
-        <p class="error" g-show="Error" g-text="Error"></p>
-        <p class="muted">cwd: <span g-text="CWD"></span></p>
-      </section>
 
-      <section class="panel live">
-        <h2>Live assistant delta</h2>
-        <pre g-text="LastAssistant"></pre>
-        <div class="metrics">
-          <span>input tokens <strong g-text="InputTokens"></strong></span>
-          <span>output tokens <strong g-text="OutputTokens"></strong></span>
-          <span g-show="Running" class="running">running</span>
-        </div>
-      </section>
-    </section>
-
-    <section class="grid two">
-      <section class="panel">
-        <div class="panel-title">
-          <h2>Built-in tools</h2>
-          <small>Stateful components emit prompt helpers</small>
-        </div>
-        <div class="cards">
-          <tool-card g-for="tool in Tools" :Name="tool.Name" :Description="tool.Description"></tool-card>
-        </div>
-      </section>
-
-      <section class="panel">
-        <div class="panel-title">
-          <h2>Skills</h2>
-          <small>Discovered from .erasmus/examples/godom/skills</small>
-        </div>
-        <div class="cards">
-          <skill-card g-for="skill in Skills" :Name="skill.Name" :Description="skill.Description"></skill-card>
-        </div>
-      </section>
-    </section>
-
-    <section class="grid two">
-      <section class="panel">
-        <div class="panel-title">
-          <h2>Swarm</h2>
-          <div class="actions compact-actions">
-            <button g-click="SpawnWorker">Spawn worker</button>
-            <button g-click="SendToFirstWorker">Send follow-up</button>
+        <form class="composer">
+          <textarea rows="4" g-bind="ChatInput" placeholder="Send a message to the Erasmus demo assistant"></textarea>
+          <div class="composer-actions">
+            <p class="error" g-show="Error" g-text="Error"></p>
+            <button class="primary" type="button" g-click="SendChat">Send</button>
           </div>
-        </div>
-        <table>
-          <thead>
-            <tr><th>ID</th><th>Task</th><th>Running</th><th>Events</th><th>Session</th></tr>
-          </thead>
-          <tbody>
-            <tr g-for="agent in Agents">
-              <td g-text="agent.ID"></td>
-              <td g-text="agent.Task"></td>
-              <td g-text="agent.Running"></td>
-              <td g-text="agent.Events"></td>
-              <td g-text="agent.SessionID"></td>
-            </tr>
-          </tbody>
-        </table>
+        </form>
       </section>
 
-      <section class="panel">
-        <div class="panel-title">
-          <h2>Event stream</h2>
-          <button g-click="ClearEvents">Clear</button>
-        </div>
-        <ul class="events">
-          <li g-for="ev in Events">
-            <time g-text="ev.When"></time>
-            <strong g-text="ev.Kind"></strong>
-            <span g-text="ev.Text"></span>
-          </li>
-        </ul>
-      </section>
-    </section>
+      <aside class="side-pane">
+        <section class="panel">
+          <h2>Session</h2>
+          <dl>
+            <div><dt>cwd</dt><dd g-text="CWD"></dd></div>
+            <div><dt>input</dt><dd g-text="InputTokens"></dd></div>
+            <div><dt>output</dt><dd g-text="OutputTokens"></dd></div>
+          </dl>
+          <div class="actions">
+            <button type="button" g-click="ContinueRun">Continue</button>
+            <button type="button" g-click="AbortRun">Abort</button>
+            <button type="button" g-click="CompactSession">Compact</button>
+          </div>
+        </section>
 
-    <section class="grid two">
-      <section class="panel transcript">
-        <h2>Durable transcript</h2>
-        <pre g-text="Transcript"></pre>
-      </section>
-      <section class="panel transcript">
-        <h2>Last compaction summary</h2>
-        <pre g-text="Summary"></pre>
-      </section>
+        <section class="panel">
+          <div class="panel-title">
+            <h2>Events</h2>
+            <button type="button" g-click="ClearEvents">Clear</button>
+          </div>
+          <ul class="events">
+            <li g-for="ev in Events">
+              <time g-text="ev.When"></time>
+              <strong g-text="ev.Kind"></strong>
+              <span g-text="ev.Text"></span>
+            </li>
+          </ul>
+        </section>
+      </aside>
     </section>
   </main>
 </body>
