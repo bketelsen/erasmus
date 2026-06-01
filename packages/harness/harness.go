@@ -44,6 +44,8 @@ type Hooks struct {
 	BeforeProviderRequest func(context.Context, *provider.Request) error
 	ToolCall              func(context.Context, ToolCallContext) (ToolCallDecision, error)
 	ToolResult            func(context.Context, ToolResultContext) (ToolResultPatch, error)
+	BeforeCompact         func(context.Context, BeforeCompactContext) (BeforeCompactResult, error)
+	AfterCompact          func(context.Context, AfterCompactContext) error
 }
 
 // ToolCallContext describes a pending tool call observed by harness hooks.
@@ -70,6 +72,22 @@ type ToolResultContext struct {
 // ToolResultPatch may replace a tool result after execution.
 type ToolResultPatch struct {
 	Result *tool.Result
+}
+
+// BeforeCompactContext describes a requested session compaction.
+type BeforeCompactContext struct {
+	Messages []message.Message
+	Options  compact.Options
+}
+
+// BeforeCompactResult may patch compaction options before preparation.
+type BeforeCompactResult struct {
+	Options *compact.Options
+}
+
+// AfterCompactContext describes a completed compaction result before persistence.
+type AfterCompactContext struct {
+	Result compact.Result
 }
 
 // Resources groups runtime prompt resources that can be changed together.
@@ -300,6 +318,15 @@ func (h *Harness) Subscribe(fn func(event.Event)) func() {
 // Compact summarizes earlier transcript and updates in-memory context.
 func (h *Harness) Compact(ctx context.Context, opts compact.Options) (compact.Result, error) {
 	messages := h.agent.Messages()
+	if h.hooks.BeforeCompact != nil {
+		next, err := h.hooks.BeforeCompact(ctx, BeforeCompactContext{Messages: append([]message.Message(nil), messages...), Options: opts})
+		if err != nil {
+			return compact.Result{}, err
+		}
+		if next.Options != nil {
+			opts = *next.Options
+		}
+	}
 	prep, err := compact.Prepare(messages, opts)
 	if err != nil {
 		return compact.Result{}, err
@@ -307,6 +334,11 @@ func (h *Harness) Compact(ctx context.Context, opts compact.Options) (compact.Re
 	result, err := compact.Run(ctx, h.stream, prep)
 	if err != nil {
 		return compact.Result{}, err
+	}
+	if h.hooks.AfterCompact != nil {
+		if err := h.hooks.AfterCompact(ctx, AfterCompactContext{Result: result}); err != nil {
+			return compact.Result{}, err
+		}
 	}
 	if _, err := h.session.AppendCompaction(ctx, session.Compaction{Summary: result.Summary}); err != nil {
 		return compact.Result{}, err
