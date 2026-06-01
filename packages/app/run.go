@@ -163,6 +163,21 @@ func applyExtensionHostActions(ctx context.Context, h *harness.Harness, actions 
 			if err := h.SetActiveTools(ctx, data.Names); err != nil {
 				return err
 			}
+		case "save_point":
+			var data struct {
+				Label string          `json:"label"`
+				Data  json.RawMessage `json:"data,omitempty"`
+			}
+			if err := json.Unmarshal(action.Data, &data); err != nil {
+				return err
+			}
+			var payload any
+			if len(data.Data) > 0 {
+				payload = data.Data
+			}
+			if _, err := h.SavePoint(ctx, data.Label, payload); err != nil {
+				return err
+			}
 		}
 	}
 	return nil

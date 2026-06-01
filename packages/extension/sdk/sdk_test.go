@@ -121,6 +121,16 @@ func TestSetActiveToolsAction(t *testing.T) {
 	}
 }
 
+func TestSavePointAction(t *testing.T) {
+	action := sdk.SavePointAction("before-change", map[string]string{"path": "main.go"})
+	if action.Type != "save_point" {
+		t.Fatalf("type = %q", action.Type)
+	}
+	if !strings.Contains(string(action.Data), `"label":"before-change"`) || !strings.Contains(string(action.Data), `"path":"main.go"`) {
+		t.Fatalf("data = %s", action.Data)
+	}
+}
+
 func TestRunWithIOReturnsProtocolErrorsAsFrames(t *testing.T) {
 	toolCall, err := proto.EncodeFrame("tool_call", "tool-1", proto.ToolCall{ID: "tool-1", Name: "fail", Args: json.RawMessage(`{}`)})
 	if err != nil {

@@ -92,6 +92,15 @@ func SetActiveToolsAction(names ...string) proto.HostAction {
 	return proto.HostAction{Type: "set_active_tools", Data: data}
 }
 
+// SavePointAction asks the host to persist a checkpoint marker.
+func SavePointAction(label string, value any) proto.HostAction {
+	data, _ := json.Marshal(struct {
+		Label string `json:"label"`
+		Data  any    `json:"data,omitempty"`
+	}{Label: label, Data: value})
+	return proto.HostAction{Type: "save_point", Data: data}
+}
+
 type runner struct {
 	ctx context.Context
 	ext Extension

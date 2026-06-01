@@ -106,6 +106,38 @@ for line in sys.stdin:
 	}
 }
 
+func TestRunConfiguredAppliesExtensionSavePointRequests(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("script test")
+	}
+	dir := t.TempDir()
+	t.Setenv("XDG_STATE_HOME", filepath.Join(dir, "state"))
+	sessionPath := filepath.Join(dir, "session.jsonl")
+	path := filepath.Join(dir, "ext.py")
+	script := `#!/usr/bin/env python3
+import json, sys
+print(json.dumps({"type":"hello","data":{"name":"checkpoint-test","version":"1"}}), flush=True)
+print(json.dumps({"type":"host_action","data":{"type":"save_point","data":{"label":"extension-start","data":{"source":"extension"}}}}), flush=True)
+for line in sys.stdin:
+    pass
+`
+	if err := os.WriteFile(path, []byte(script), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	var out bytes.Buffer
+	err := app.RunConfigured(context.Background(), app.RunOptions{Prompt: "hello", Out: &out, SessionPath: sessionPath}, config.Config{Provider: "fake", Model: "echo", Extensions: []config.ExtensionConfig{{Command: path}}}, auth.NewMemoryStore())
+	if err != nil {
+		t.Fatal(err)
+	}
+	data, err := os.ReadFile(sessionPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(data), `"custom_type":"checkpoint"`) || !strings.Contains(string(data), `"label":"extension-start"`) {
+		t.Fatalf("session log missing checkpoint:\n%s", data)
+	}
+}
+
 func quotePy(s string) string {
 	data, _ := json.Marshal(s)
 	return string(data)
