@@ -73,6 +73,18 @@ func RunConfigured(ctx context.Context, opts RunOptions, cfg config.Config, stor
 		return err
 	}
 	if extensions != nil {
+		previousTransform := resolved.Harness.LoopHooks.TransformContext
+		resolved.Harness.LoopHooks.TransformContext = func(ctx context.Context, messages []message.Message) ([]message.Message, error) {
+			current := messages
+			if previousTransform != nil {
+				next, err := previousTransform(ctx, current)
+				if err != nil {
+					return nil, err
+				}
+				current = next
+			}
+			return extensions.TransformContext(ctx, current)
+		}
 		previousRequest := resolved.Harness.Hooks.BeforeProviderRequest
 		resolved.Harness.Hooks.BeforeProviderRequest = func(ctx context.Context, req *provider.Request) error {
 			if previousRequest != nil {

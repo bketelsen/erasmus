@@ -193,6 +193,38 @@ for line in sys.stdin:
 	}
 }
 
+func TestRunConfiguredLetsExtensionTransformContext(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("script test")
+	}
+	dir := t.TempDir()
+	t.Setenv("XDG_STATE_HOME", filepath.Join(dir, "state"))
+	path := filepath.Join(dir, "ext.py")
+	script := `#!/usr/bin/env python3
+import json, sys
+print(json.dumps({"type":"hello","data":{"name":"context-hook-test","version":"1"}}), flush=True)
+print(json.dumps({"type":"subscribe_hooks","data":{"hooks":["context_transform"]}}), flush=True)
+for line in sys.stdin:
+    frame = json.loads(line)
+    data = frame.get("data", {})
+    if frame.get("type") == "hook_call" and data.get("hook") == "context_transform":
+        messages = data.get("messages", [])
+        messages[0]["content"] = [{"text":"transformed by extension"}]
+        print(json.dumps({"type":"hook_result","id":frame.get("id"),"data":{"id":frame.get("id"),"messages":messages}}), flush=True)
+`
+	if err := os.WriteFile(path, []byte(script), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	var out bytes.Buffer
+	err := app.RunConfigured(context.Background(), app.RunOptions{Prompt: "original", Out: &out}, config.Config{Provider: "fake", Model: "echo", Extensions: []config.ExtensionConfig{{Command: path}}}, auth.NewMemoryStore())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(out.String(), "fake response: transformed by extension") {
+		t.Fatalf("output:\n%s", out.String())
+	}
+}
+
 func quotePy(s string) string {
 	data, _ := json.Marshal(s)
 	return string(data)

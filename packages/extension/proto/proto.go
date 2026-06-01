@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 
 	"erasmus/packages/event"
+	"erasmus/packages/message"
 	"erasmus/packages/provider"
 	"erasmus/packages/tool"
 )
@@ -60,18 +61,20 @@ type SubscribeHooks struct {
 
 // HookCall carries a runtime hook request from the host to an extension.
 type HookCall struct {
-	ID      string           `json:"id"`
-	Hook    string           `json:"hook"`
-	Request provider.Request `json:"request,omitempty"`
-	Events  []ProviderEvent  `json:"events,omitempty"`
+	ID       string            `json:"id"`
+	Hook     string            `json:"hook"`
+	Request  provider.Request  `json:"request,omitempty"`
+	Messages []message.Message `json:"messages,omitempty"`
+	Events   []ProviderEvent   `json:"events,omitempty"`
 }
 
 // HookResult returns a runtime hook decision to the host.
 type HookResult struct {
-	ID      string            `json:"id"`
-	Deny    bool              `json:"deny,omitempty"`
-	Error   string            `json:"error,omitempty"`
-	Request *provider.Request `json:"request,omitempty"`
+	ID       string            `json:"id"`
+	Deny     bool              `json:"deny,omitempty"`
+	Error    string            `json:"error,omitempty"`
+	Request  *provider.Request `json:"request,omitempty"`
+	Messages []message.Message `json:"messages,omitempty"`
 }
 
 // CommandCall requests extension command execution.

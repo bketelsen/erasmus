@@ -13,7 +13,7 @@ Every stdout line from an extension must be one JSON frame:
 {"type":"register_tool","data":{"name":"echo","description":"Echo text"}}
 {"type":"register_command","data":{"name":"hello","description":"Print a greeting"}}
 {"type":"subscribe","data":{"events":["settled","save_point"]}}
-{"type":"subscribe_hooks","data":{"hooks":["provider_request","provider_response"]}}
+{"type":"subscribe_hooks","data":{"hooks":["context_transform","provider_request","provider_response"]}}
 ```
 
 The host calls tools and commands by writing frames to the extension stdin:
@@ -22,6 +22,7 @@ The host calls tools and commands by writing frames to the extension stdin:
 {"type":"tool_call","id":"echo-1","data":{"id":"echo-1","name":"echo","args":{"text":"hi"}}}
 {"type":"command_call","id":"hello-1","data":{"id":"hello-1","name":"hello","input":{"text":"Ada"}}}
 {"type":"event","id":"settled","data":{"type":"settled","data":{}}}
+{"type":"hook_call","id":"context-transform-1","data":{"id":"context-transform-1","hook":"context_transform","messages":[{"role":"user","content":[{"text":"hi"}]}]}}
 {"type":"hook_call","id":"provider-request-1","data":{"id":"provider-request-1","hook":"provider_request","request":{"messages":[]}}}
 ```
 
@@ -33,6 +34,7 @@ The extension answers with matching result frames:
 {"type":"host_action","data":{"type":"print","data":{"text":"saw settled"}}}
 {"type":"host_action","data":{"type":"set_active_tools","data":{"names":["read","bash"]}}}
 {"type":"host_action","data":{"type":"save_point","data":{"label":"before-change","data":{"source":"extension"}}}}
+{"type":"hook_result","id":"context-transform-1","data":{"id":"context-transform-1","messages":[{"role":"user","content":[{"text":"rewritten"}]}]}}
 {"type":"hook_result","id":"provider-request-1","data":{"id":"provider-request-1","deny":true,"error":"blocked by policy"}}
 ```
 
@@ -40,7 +42,7 @@ Tool result `content` uses Erasmus canonical message content. Text parts are enc
 
 `subscribe` lets an extension request runtime events by event type. Use `"*"` to request every forwarded event. Event delivery is best-effort and currently one-way; extensions should not block host progress waiting for event acknowledgement.
 
-`subscribe_hooks` lets an extension request blocking runtime hook calls. Supported hooks are `provider_request`, which runs before the provider stream begins, and `provider_response`, which runs after the provider stream completes. A hook result can deny the operation with `{"deny":true,"error":"..."}`. `provider_request` can also replace the provider request by returning a `request` object. Hook calls are blocking, so handlers should return quickly.
+`subscribe_hooks` lets an extension request blocking runtime hook calls. Supported hooks are `context_transform`, which rewrites provider-facing context messages without changing the durable transcript; `provider_request`, which runs before the provider stream begins; and `provider_response`, which runs after the provider stream completes. A hook result can deny the operation with `{"deny":true,"error":"..."}`. `context_transform` can replace context by returning `messages`, and `provider_request` can replace the provider request by returning a `request` object. Hook calls are blocking, so handlers should return quickly.
 
 Supported host actions:
 
@@ -87,7 +89,7 @@ func main() {
 	err := sdk.Run(context.Background(), sdk.Extension{
 		Name: "go-demo",
 		Events: []string{"settled"},
-		Hooks: []string{"provider_request", "provider_response"},
+		Hooks: []string{"context_transform", "provider_request", "provider_response"},
 		OnEvent: func(ctx context.Context, ev proto.Event) ([]proto.HostAction, error) {
 			return []proto.HostAction{sdk.PrintAction("saw " + ev.Type)}, nil
 		},
@@ -151,6 +153,6 @@ Startup errors and command/tool failures include the log path when available. In
 
 ## Current Gaps
 
-The protocol currently covers startup registration, tools, commands, command host actions, runtime event subscriptions, provider request/response hooks, diagnostics, and configured subprocess tools.
+The protocol currently covers startup registration, tools, commands, command host actions, runtime event subscriptions, context transforms, provider request/response hooks, diagnostics, and configured subprocess tools.
 
-The stable protocol does not yet expose context transforms, broad resource mutation requests beyond active-tool selection, panels, skills, or background lifecycle controls. Keep extensions headless and avoid depending on a specific frontend.
+The stable protocol does not yet expose broad resource mutation requests beyond active-tool selection, panels, skills, or background lifecycle controls. Keep extensions headless and avoid depending on a specific frontend.

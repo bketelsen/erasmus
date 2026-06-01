@@ -15,6 +15,7 @@ import (
 	"erasmus/packages/event"
 	"erasmus/packages/extension"
 	extproto "erasmus/packages/extension/proto"
+	"erasmus/packages/message"
 	"erasmus/packages/provider"
 	"erasmus/packages/tool"
 )
@@ -253,6 +254,34 @@ func (e *ConfiguredExtensions) BeforeProviderRequest(ctx context.Context, req *p
 		}
 	}
 	return nil
+}
+
+// TransformContext lets subscribed extensions patch provider-facing context messages.
+func (e *ConfiguredExtensions) TransformContext(ctx context.Context, messages []message.Message) ([]message.Message, error) {
+	if e == nil {
+		return messages, nil
+	}
+	current := append([]message.Message(nil), messages...)
+	for _, proc := range e.procs {
+		if !proc.HookSubscribed("context_transform") {
+			continue
+		}
+		id := fmt.Sprintf("context-transform-%d", atomic.AddUint64(&e.nextHookID, 1))
+		res, err := proc.CallHook(ctx, extproto.HookCall{ID: id, Hook: "context_transform", Messages: current})
+		if err != nil {
+			return nil, withExtensionLogPath(err, proc.LogPath())
+		}
+		if res.Error != "" {
+			return nil, withExtensionLogPath(fmt.Errorf("%s", res.Error), proc.LogPath())
+		}
+		if res.Deny {
+			return nil, withExtensionLogPath(fmt.Errorf("context transform denied by extension"), proc.LogPath())
+		}
+		if res.Messages != nil {
+			current = append([]message.Message(nil), res.Messages...)
+		}
+	}
+	return current, nil
 }
 
 // AfterProviderResponse lets subscribed extensions observe or reject provider responses.
