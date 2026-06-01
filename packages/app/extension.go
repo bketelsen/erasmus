@@ -17,6 +17,7 @@ import (
 	extproto "erasmus/packages/extension/proto"
 	"erasmus/packages/message"
 	"erasmus/packages/provider"
+	"erasmus/packages/skill"
 	"erasmus/packages/tool"
 )
 
@@ -117,6 +118,7 @@ func commandInput(input string) json.RawMessage {
 type ConfiguredExtensions struct {
 	procs      []*extension.Process
 	tools      tool.Registry
+	skills     []skill.Skill
 	nextHookID uint64
 }
 
@@ -126,6 +128,14 @@ func (e *ConfiguredExtensions) Tools() tool.Registry {
 		return nil
 	}
 	return e.tools
+}
+
+// Skills returns all registered subprocess skills.
+func (e *ConfiguredExtensions) Skills() []skill.Skill {
+	if e == nil {
+		return nil
+	}
+	return append([]skill.Skill(nil), e.skills...)
 }
 
 // Close terminates all subprocesses.
@@ -334,6 +344,7 @@ func StartConfiguredExtensionSet(ctx context.Context, cfg config.Config) (*Confi
 	}
 	set := &ConfiguredExtensions{}
 	var tools []tool.Tool
+	var skills []skill.Skill
 	for _, ext := range cfg.Extensions {
 		if strings.TrimSpace(ext.Command) == "" {
 			set.Close()
@@ -346,8 +357,10 @@ func StartConfiguredExtensionSet(ctx context.Context, cfg config.Config) (*Confi
 		}
 		set.procs = append(set.procs, proc)
 		tools = append(tools, proc.Manager().Registry().List()...)
+		skills = append(skills, proc.Manager().Skills()...)
 	}
 	set.tools = tool.NewRegistry(tools...)
+	set.skills = skills
 	return set, nil
 }
 
@@ -367,14 +380,14 @@ func extensionLogName(command string, t time.Time) string {
 	return t.UTC().Format("20060102T150405.000000000Z") + "-" + name + ".jsonl"
 }
 
-// StartConfiguredExtensions starts configured extension subprocesses and returns their tools.
-func StartConfiguredExtensions(ctx context.Context, cfg config.Config) (tool.Registry, func(), error) {
+// StartConfiguredExtensions starts configured extension subprocesses and returns their resources.
+func StartConfiguredExtensions(ctx context.Context, cfg config.Config) (tool.Registry, []skill.Skill, func(), error) {
 	set, err := StartConfiguredExtensionSet(ctx, cfg)
 	if err != nil {
-		return nil, nil, err
+		return nil, nil, nil, err
 	}
 	if set == nil {
-		return nil, func() {}, nil
+		return nil, nil, func() {}, nil
 	}
-	return set.Tools(), set.Close, nil
+	return set.Tools(), set.Skills(), set.Close, nil
 }

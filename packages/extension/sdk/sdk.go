@@ -54,6 +54,7 @@ type Extension struct {
 	OnEvent  EventHandler
 	Hooks    []string
 	OnHook   HookHandler
+	Skills   []skill.Skill
 	Tools    []Tool
 	Commands []Command
 }
@@ -144,6 +145,11 @@ func (r *runner) writeStartup() error {
 	}
 	for _, c := range r.ext.Commands {
 		if err := r.write("register_command", "", proto.RegisterCommand{Name: c.Name, Description: c.Description}); err != nil {
+			return err
+		}
+	}
+	for _, s := range r.ext.Skills {
+		if err := r.write("register_skill", "", proto.RegisterSkill{Name: s.Name, Description: s.Description, Body: s.Body, Source: s.Source}); err != nil {
 			return err
 		}
 	}

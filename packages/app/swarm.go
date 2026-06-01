@@ -44,7 +44,7 @@ func RunSwarmConfigured(ctx context.Context, opts SwarmRunOptions, cfg config.Co
 	if opts.Subprocess {
 		return RunSwarmSubprocess(ctx, opts)
 	}
-	extraTools, cleanupExtensions, err := StartConfiguredExtensions(ctx, cfg)
+	extraTools, extensionSkills, cleanupExtensions, err := StartConfiguredExtensions(ctx, cfg)
 	if err != nil {
 		return err
 	}
@@ -66,6 +66,7 @@ func RunSwarmConfigured(ctx context.Context, opts SwarmRunOptions, cfg config.Co
 			if err != nil {
 				return nil, err
 			}
+			skills = append(skills, extensionSkills...)
 			sess, err := swarmSession(req.ID, runtimeCfg.CWD, opts)
 			if err != nil {
 				return nil, err

@@ -68,6 +68,7 @@ type ExtensionUpdate struct {
 	Action   string             `json:"action,omitempty"`
 	Tools    []tool.Spec        `json:"tools,omitempty"`
 	Commands []ExtensionCommand `json:"commands,omitempty"`
+	Skills   []skill.Skill      `json:"skills,omitempty"`
 }
 
 func (ExtensionUpdate) Type() string { return "extension_update" }

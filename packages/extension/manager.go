@@ -6,6 +6,7 @@ import (
 
 	"erasmus/packages/event"
 	"erasmus/packages/extension/proto"
+	"erasmus/packages/skill"
 	"erasmus/packages/tool"
 )
 
@@ -17,6 +18,8 @@ type Manager struct {
 	order        []string
 	interceptors []ToolInterceptor
 	commands     map[string]Command
+	skills       map[string]skill.Skill
+	skillOrder   []string
 	actions      []HostAction
 	subscribers  map[int]func(event.Event)
 	nextSubID    int
@@ -24,7 +27,7 @@ type Manager struct {
 
 // NewManager creates a manager using caller for tool execution.
 func NewManager(caller Caller) *Manager {
-	return &Manager{caller: caller, tools: map[string]tool.Tool{}, commands: map[string]Command{}, subscribers: map[int]func(event.Event){}}
+	return &Manager{caller: caller, tools: map[string]tool.Tool{}, commands: map[string]Command{}, skills: map[string]skill.Skill{}, subscribers: map[int]func(event.Event){}}
 }
 
 // RegisterTool registers an extension tool.
@@ -41,6 +44,23 @@ func (m *Manager) RegisterTool(reg proto.RegisterTool) tool.Tool {
 	return t
 }
 
+// RegisterSkill registers an extension prompt skill.
+func (m *Manager) RegisterSkill(reg proto.RegisterSkill) skill.Skill {
+	m.mu.Lock()
+	s := skill.Skill{Name: reg.Name, Description: reg.Description, Body: reg.Body, Source: reg.Source}
+	if s.Source == "" {
+		s.Source = "extension:" + reg.Name
+	}
+	if _, ok := m.skills[reg.Name]; !ok {
+		m.skillOrder = append(m.skillOrder, reg.Name)
+	}
+	m.skills[reg.Name] = s
+	update := m.extensionUpdateLocked("register_skill")
+	m.mu.Unlock()
+	m.publish(update)
+	return s
+}
+
 // Registry returns registered extension tools as a tool registry.
 func (m *Manager) Registry() tool.Registry {
 	m.mu.Lock()
@@ -50,6 +70,17 @@ func (m *Manager) Registry() tool.Registry {
 		tools = append(tools, m.tools[name])
 	}
 	return tool.NewRegistry(tools...)
+}
+
+// Skills returns registered extension prompt skills.
+func (m *Manager) Skills() []skill.Skill {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	out := make([]skill.Skill, 0, len(m.skillOrder))
+	for _, name := range m.skillOrder {
+		out = append(out, m.skills[name])
+	}
+	return out
 }
 
 // Host is the future extension host interface consumed by harness.
@@ -101,7 +132,11 @@ func (m *Manager) extensionUpdateLocked(action string) event.ExtensionUpdate {
 	for _, cmd := range m.commands {
 		commands = append(commands, event.ExtensionCommand{Name: cmd.Name(), Description: cmd.Description()})
 	}
-	return event.ExtensionUpdate{Action: action, Tools: tools, Commands: commands}
+	skills := make([]skill.Skill, 0, len(m.skillOrder))
+	for _, name := range m.skillOrder {
+		skills = append(skills, m.skills[name])
+	}
+	return event.ExtensionUpdate{Action: action, Tools: tools, Commands: commands, Skills: skills}
 }
 
 var _ Host = (*Manager)(nil)

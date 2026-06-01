@@ -12,6 +12,7 @@ Every stdout line from an extension must be one JSON frame:
 {"type":"hello","data":{"name":"demo","version":"v0"}}
 {"type":"register_tool","data":{"name":"echo","description":"Echo text"}}
 {"type":"register_command","data":{"name":"hello","description":"Print a greeting"}}
+{"type":"register_skill","data":{"name":"review","description":"Review code","body":"Review carefully."}}
 {"type":"subscribe","data":{"events":["settled","save_point"]}}
 {"type":"subscribe_hooks","data":{"hooks":["context_transform","provider_request","provider_response"]}}
 ```
@@ -52,6 +53,8 @@ Supported host actions:
 - `set_resources`: asks the host to patch runtime resources. Currently supported fields are `active_tools` and `skills`; tool definitions are still supplied through startup registration.
 - `save_point`: asks the host to persist a checkpoint marker when the runtime supports durable sessions.
 
+Registered skills are merged with project/user skills before harness construction for configured extension frontends. Use `set_resources` for later skill replacement requests.
+
 ## Raw Example
 
 A minimal shell extension can register a tool:
@@ -85,6 +88,7 @@ import (
 
 	"erasmus/packages/extension/proto"
 	"erasmus/packages/extension/sdk"
+	"erasmus/packages/skill"
 )
 
 func main() {
@@ -92,6 +96,11 @@ func main() {
 		Name: "go-demo",
 		Events: []string{"settled"},
 		Hooks: []string{"context_transform", "provider_request", "provider_response"},
+		Skills: []skill.Skill{{
+			Name:        "review",
+			Description: "Review code",
+			Body:        "Review carefully.",
+		}},
 		OnEvent: func(ctx context.Context, ev proto.Event) ([]proto.HostAction, error) {
 			return []proto.HostAction{sdk.PrintAction("saw " + ev.Type)}, nil
 		},

@@ -42,6 +42,38 @@ for line in sys.stdin:
 	}
 }
 
+func TestRunConfiguredIncludesExtensionRegisteredSkills(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("script test")
+	}
+	dir := t.TempDir()
+	t.Setenv("XDG_STATE_HOME", filepath.Join(dir, "state"))
+	path := filepath.Join(dir, "ext.py")
+	script := `#!/usr/bin/env python3
+import json, sys
+print(json.dumps({"type":"hello","data":{"name":"skill-test","version":"1"}}), flush=True)
+print(json.dumps({"type":"register_skill","data":{"name":"extension-review","description":"Review from extension","body":"Review carefully."}}), flush=True)
+print(json.dumps({"type":"subscribe_hooks","data":{"hooks":["provider_request"]}}), flush=True)
+for line in sys.stdin:
+    frame = json.loads(line)
+    data = frame.get("data", {})
+    if frame.get("type") == "hook_call" and data.get("hook") == "provider_request":
+        system = data.get("request", {}).get("system", "")
+        if "extension-review" in system and "Review from extension" in system:
+            print(json.dumps({"type":"hook_result","id":frame.get("id"),"data":{"id":frame.get("id"),"deny":True,"error":"extension skill included"}}), flush=True)
+        else:
+            print(json.dumps({"type":"hook_result","id":frame.get("id"),"data":{"id":frame.get("id")}}), flush=True)
+`
+	if err := os.WriteFile(path, []byte(script), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	var out bytes.Buffer
+	err := app.RunConfigured(context.Background(), app.RunOptions{Prompt: "hello", Out: &out}, config.Config{Provider: "fake", Model: "echo", Extensions: []config.ExtensionConfig{{Command: path}}}, auth.NewMemoryStore())
+	if err == nil || !strings.Contains(err.Error(), "extension skill included") {
+		t.Fatalf("err = %v, output:\n%s", err, out.String())
+	}
+}
+
 func TestRunConfiguredForwardsRuntimeEventsToExtensions(t *testing.T) {
 	if runtime.GOOS == "windows" {
 		t.Skip("script test")

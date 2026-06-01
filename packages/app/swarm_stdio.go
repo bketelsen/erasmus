@@ -84,7 +84,7 @@ func newSwarmController(ctx context.Context, cfg config.Config, store auth.Store
 	if cwd == "" {
 		cwd, _ = os.Getwd()
 	}
-	extraTools, cleanupExtensions, err := StartConfiguredExtensions(ctx, cfg)
+	extraTools, extensionSkills, cleanupExtensions, err := StartConfiguredExtensions(ctx, cfg)
 	if err != nil {
 		return nil, err
 	}
@@ -103,6 +103,7 @@ func newSwarmController(ctx context.Context, cfg config.Config, store auth.Store
 		if err != nil {
 			return nil, err
 		}
+		skills = append(skills, extensionSkills...)
 		sess, err := swarmSession(req.ID, runtimeCfg.CWD, SwarmRunOptions{SessionPath: reqSessionPath(req), SessionDir: reqSessionDir(req), MemorySession: req.SessionScope == "memory"})
 		if err != nil {
 			return nil, err

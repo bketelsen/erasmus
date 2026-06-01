@@ -62,6 +62,7 @@ func RunRPCConfigured(ctx context.Context, in io.Reader, out io.Writer, cfg conf
 		var extraTools tool.Registry
 		if extensions != nil {
 			extraTools = extensions.Tools()
+			skills = append(skills, extensions.Skills()...)
 		}
 		resolved, err := ResolveHarnessConfig(ctx, ResolveOptions{
 			Config:     runtimeCfg,

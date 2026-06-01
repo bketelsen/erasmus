@@ -112,6 +112,28 @@ func TestRunWithIOSubscribesAndHandlesEvents(t *testing.T) {
 	}
 }
 
+func TestRunWithIORegistersSkills(t *testing.T) {
+	var output bytes.Buffer
+	err := sdk.RunWithIO(context.Background(), sdk.Extension{
+		Name:   "test-extension",
+		Skills: []skill.Skill{{Name: "review", Description: "Review code", Body: "Review carefully."}},
+	}, strings.NewReader(""), &output)
+	if err != nil {
+		t.Fatal(err)
+	}
+	frames := decodeLines(t, output.String())
+	if got, want := frameTypes(frames), []string{"hello", "register_skill"}; !equalStrings(got, want) {
+		t.Fatalf("frame types = %v, want %v", got, want)
+	}
+	var reg proto.RegisterSkill
+	if err := proto.DecodeData(frames[1], &reg); err != nil {
+		t.Fatal(err)
+	}
+	if reg.Name != "review" || reg.Description != "Review code" || reg.Body != "Review carefully." {
+		t.Fatalf("register skill = %+v", reg)
+	}
+}
+
 func TestRunWithIOSubscribesAndHandlesHooks(t *testing.T) {
 	hookCall, err := proto.EncodeFrame("hook_call", "hook-1", proto.HookCall{ID: "hook-1", Hook: "provider_request"})
 	if err != nil {

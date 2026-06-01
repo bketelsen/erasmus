@@ -134,7 +134,7 @@ func buildTUIHarness(ctx context.Context, cfg config.Config, store auth.Store, s
 	if err != nil {
 		return nil, nil, err
 	}
-	extraTools, cleanupExtensions, err := StartConfiguredExtensions(ctx, cfg)
+	extraTools, extensionSkills, cleanupExtensions, err := StartConfiguredExtensions(ctx, cfg)
 	if err != nil {
 		_ = sess.Close(ctx)
 		return nil, nil, err
@@ -147,7 +147,7 @@ func buildTUIHarness(ctx context.Context, cfg config.Config, store auth.Store, s
 		Config:     cfg,
 		Session:    sess,
 		Auth:       store,
-		Skills:     skills,
+		Skills:     append(skills, extensionSkills...),
 		ExtraTools: extraTools,
 	})
 	if err != nil {

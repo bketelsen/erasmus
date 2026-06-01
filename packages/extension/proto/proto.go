@@ -36,6 +36,14 @@ type RegisterCommand struct {
 	Description string `json:"description,omitempty"`
 }
 
+// RegisterSkill registers a prompt skill provided by an extension.
+type RegisterSkill struct {
+	Name        string `json:"name"`
+	Description string `json:"description,omitempty"`
+	Body        string `json:"body"`
+	Source      string `json:"source,omitempty"`
+}
+
 // Subscribe requests runtime events from the host.
 type Subscribe struct {
 	Events []string `json:"events,omitempty"`

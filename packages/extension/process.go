@@ -333,6 +333,12 @@ func (p *Process) handle(frame proto.Frame) error {
 			return err
 		}
 		p.manager.RegisterCommand(reg, p)
+	case "register_skill":
+		var reg proto.RegisterSkill
+		if err := proto.DecodeData(frame, &reg); err != nil {
+			return err
+		}
+		p.manager.RegisterSkill(reg)
 	case "subscribe":
 		var sub proto.Subscribe
 		if err := proto.DecodeData(frame, &sub); err != nil {

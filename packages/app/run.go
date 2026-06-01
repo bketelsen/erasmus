@@ -68,6 +68,7 @@ func RunConfigured(ctx context.Context, opts RunOptions, cfg config.Config, stor
 	var extraTools tool.Registry
 	if extensions != nil {
 		extraTools = extensions.Tools()
+		skills = append(skills, extensions.Skills()...)
 	}
 	resolved, err := ResolveHarnessConfig(ctx, ResolveOptions{Config: cfg, Session: sess, Auth: store, Skills: skills, ExtraTools: extraTools})
 	if err != nil {
