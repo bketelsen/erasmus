@@ -140,7 +140,11 @@ func newModelsCommand() *cobra.Command {
 		Short: "List models",
 		Args:  cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
-			for _, m := range app.Models(model.DefaultCatalog()) {
+			cfg, err := loadConfig(context.Background())
+			if err != nil {
+				return err
+			}
+			for _, m := range app.Models(app.CatalogFromConfig(cfg, model.DefaultCatalog())) {
 				fmt.Fprintf(cmd.OutOrStdout(), "%s/%s\t%s\n", m.Provider, m.ID, m.DisplayName)
 			}
 			return nil

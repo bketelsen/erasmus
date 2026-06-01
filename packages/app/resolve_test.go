@@ -111,6 +111,26 @@ func TestResolveHarnessConfigAllowsExplicitProviderModelOutsideStaticCatalog(t *
 	}
 }
 
+func TestResolveHarnessConfigUsesConfiguredModelOverrides(t *testing.T) {
+	resolved, err := app.ResolveHarnessConfig(context.Background(), app.ResolveOptions{
+		Config: config.Config{
+			Provider: "fake",
+			Model:    "echo-custom",
+			Models: []model.Model{
+				{Provider: "fake", ID: "echo-custom", DisplayName: "Custom Echo", Source: "user"},
+			},
+		},
+		Session: memory.New("test"),
+		Stream:  noopStream,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if resolved.Model.Provider != "fake" || resolved.Model.ID != "echo-custom" || resolved.Model.DisplayName != "Custom Echo" || resolved.Model.Source != "user" {
+		t.Fatalf("model = %+v", resolved.Model)
+	}
+}
+
 func TestResolveHarnessConfigRefreshesExpiredCodexOAuth(t *testing.T) {
 	oldProvider := auth.OpenAIOAuth
 	defer func() { auth.OpenAIOAuth = oldProvider }()

@@ -1,6 +1,8 @@
 // Package config defines user/app configuration shapes.
 package config
 
+import "erasmus/packages/model"
+
 // Config is the user-facing app configuration.
 type Config struct {
 	Provider   string            `json:"provider,omitempty"`
@@ -10,6 +12,7 @@ type Config struct {
 	NoTools    bool              `json:"no_tools,omitempty"`
 	CWD        string            `json:"cwd,omitempty"`
 	Theme      string            `json:"theme,omitempty"`
+	Models     []model.Model     `json:"models,omitempty"`
 	Extensions []ExtensionConfig `json:"extensions,omitempty"`
 }
 
@@ -47,6 +50,9 @@ func Merge(base, override Config) Config {
 	}
 	if override.Theme != "" {
 		out.Theme = override.Theme
+	}
+	if override.Models != nil {
+		out.Models = append([]model.Model(nil), override.Models...)
 	}
 	if override.Extensions != nil {
 		out.Extensions = append([]ExtensionConfig(nil), override.Extensions...)

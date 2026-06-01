@@ -2,9 +2,13 @@ package main
 
 import (
 	"bytes"
+	"context"
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"erasmus/packages/config"
+	"erasmus/packages/model"
 )
 
 func TestRootCommandVersionOutput(t *testing.T) {
@@ -123,6 +127,29 @@ func TestModelsCommandListsCurrentCodexDefault(t *testing.T) {
 	}
 	got := out.String()
 	if !strings.Contains(got, "openai-codex/gpt-5.5") || !strings.Contains(got, "openai-codex/gpt-5.4-mini") {
+		t.Fatalf("models output = %q", got)
+	}
+}
+
+func TestModelsCommandIncludesConfiguredModelOverrides(t *testing.T) {
+	cfgPath := filepath.Join(t.TempDir(), "config.json")
+	t.Setenv("ERASMUS_CONFIG_FILE", "")
+	t.Setenv("ERASMUS_AUTH_FILE", "")
+	if err := config.Save(context.Background(), cfgPath, config.Config{Models: []model.Model{
+		{Provider: "openai-codex", ID: "codex-custom", DisplayName: "Custom Codex", Source: "user"},
+	}}); err != nil {
+		t.Fatal(err)
+	}
+
+	cmd := newRootCommand()
+	var out bytes.Buffer
+	cmd.SetOut(&out)
+	cmd.SetErr(&out)
+	cmd.SetArgs([]string{"--config", cfgPath, "models"})
+	if err := cmd.Execute(); err != nil {
+		t.Fatal(err)
+	}
+	if got := out.String(); !strings.Contains(got, "openai-codex/codex-custom\tCustom Codex") {
 		t.Fatalf("models output = %q", got)
 	}
 }

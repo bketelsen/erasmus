@@ -47,6 +47,7 @@ func ResolveHarnessConfig(ctx context.Context, opts ResolveOptions) (Resolved, e
 	if catalog == nil {
 		catalog = model.DefaultCatalog()
 	}
+	catalog = CatalogFromConfig(cfg, catalog)
 	m, err := resolveModel(catalog, cfg.Provider, cfg.Model)
 	if err != nil {
 		return Resolved{}, err
