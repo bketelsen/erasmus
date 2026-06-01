@@ -151,6 +151,42 @@ func TestAgentSteerQueuesBeforeNextToolContinuation(t *testing.T) {
 	}
 }
 
+func TestAgentPublishesQueueUpdateWhenQueuesChange(t *testing.T) {
+	stream := func(ctx context.Context, req provider.Request) (<-chan provider.Event, error) {
+		return streamEvents(provider.MessageStart{MessageID: "a1"}, provider.TextDelta{Text: "ok"}, provider.MessageEnd{StopReason: "end_turn"}), nil
+	}
+	a := agent.New(agent.Config{LoopConfig: loopConfig(stream)})
+
+	var updates []event.QueueUpdate
+	a.Subscribe(func(ev event.Event) {
+		if update, ok := ev.(event.QueueUpdate); ok {
+			updates = append(updates, update)
+		}
+	})
+	a.Steer(message.Message{Role: message.RoleUser, Content: []message.Content{message.Text{Text: "steer"}}})
+	a.FollowUp(message.Message{Role: message.RoleUser, Content: []message.Content{message.Text{Text: "again"}}})
+	if err := a.Prompt(context.Background(), "start", nil); err != nil {
+		t.Fatal(err)
+	}
+	if err := a.Wait(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	want := []event.QueueUpdate{
+		{Steering: 1, FollowUp: 0},
+		{Steering: 1, FollowUp: 1},
+		{Steering: 0, FollowUp: 1},
+		{Steering: 0, FollowUp: 0},
+	}
+	if len(updates) != len(want) {
+		t.Fatalf("queue updates = %+v, want %+v", updates, want)
+	}
+	for i := range want {
+		if updates[i] != want[i] {
+			t.Fatalf("queue update %d = %+v, want %+v", i, updates[i], want[i])
+		}
+	}
+}
+
 func TestAgentPublishesErrorAndSettledOnRunError(t *testing.T) {
 	stream := func(ctx context.Context, req provider.Request) (<-chan provider.Event, error) {
 		return streamEvents(provider.Error{Err: "provider failed"}), nil

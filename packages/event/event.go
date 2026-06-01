@@ -41,6 +41,14 @@ type Settled struct {
 
 func (Settled) Type() string { return "settled" }
 
+// QueueUpdate reports in-memory steering and follow-up queue sizes.
+type QueueUpdate struct {
+	Steering int `json:"steering"`
+	FollowUp int `json:"follow_up"`
+}
+
+func (QueueUpdate) Type() string { return "queue_update" }
+
 // TurnStart marks the beginning of a provider/tool turn.
 type TurnStart struct {
 	Step int `json:"step"`

@@ -250,31 +250,47 @@ func (a *Agent) Messages() []message.Message {
 // Steer queues a steering message to be appended before the next provider turn.
 func (a *Agent) Steer(msg message.Message) {
 	a.mu.Lock()
-	defer a.mu.Unlock()
 	a.steering = append(a.steering, msg)
+	ev := a.queueUpdateLocked()
+	a.mu.Unlock()
+	a.publish(ev)
 }
 
 // FollowUp queues a message to run after the current turn would otherwise settle.
 func (a *Agent) FollowUp(msg message.Message) {
 	a.mu.Lock()
-	defer a.mu.Unlock()
 	a.followUp = append(a.followUp, msg)
+	ev := a.queueUpdateLocked()
+	a.mu.Unlock()
+	a.publish(ev)
 }
 
 func (a *Agent) drainSteering(context.Context) ([]message.Message, error) {
 	a.mu.Lock()
-	defer a.mu.Unlock()
 	msgs := copyMessages(a.steering)
 	a.steering = nil
+	ev := a.queueUpdateLocked()
+	a.mu.Unlock()
+	if len(msgs) > 0 {
+		a.publish(ev)
+	}
 	return msgs, nil
 }
 
 func (a *Agent) drainFollowUp(context.Context) ([]message.Message, error) {
 	a.mu.Lock()
-	defer a.mu.Unlock()
 	msgs := copyMessages(a.followUp)
 	a.followUp = nil
+	ev := a.queueUpdateLocked()
+	a.mu.Unlock()
+	if len(msgs) > 0 {
+		a.publish(ev)
+	}
 	return msgs, nil
+}
+
+func (a *Agent) queueUpdateLocked() event.QueueUpdate {
+	return event.QueueUpdate{Steering: len(a.steering), FollowUp: len(a.followUp)}
 }
 
 func (a *Agent) applyEvent(ev event.Event) {
