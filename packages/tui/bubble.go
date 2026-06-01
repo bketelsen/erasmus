@@ -112,6 +112,11 @@ type bubbleModel struct {
 	swarmPromptMode    string
 	swarmAttached      bool
 	swarmAttachTickID  int
+
+	searchActive  bool
+	searchQuery   string
+	searchMatches []int
+	searchIndex   int
 }
 
 type bubbleTheme struct {
@@ -191,7 +196,7 @@ func newBubbleModel(ctx context.Context, app *App) bubbleModel {
 	renderer, _ := glamour.NewTermRenderer(glamour.WithStandardStyle(theme.Glamour), glamour.WithWordWrap(100))
 	m := bubbleModel{app: app, ctx: ctx, viewport: vp, input: ta, status: "ready", follow: true, renderer: renderer, theme: theme, reasoningLevels: []string{"", "low", "medium", "high"}}
 	m.appendLine("Erasmus TUI — Bubble Tea full-screen shell")
-	m.appendLine("Type /help for commands. Submit with ctrl+s. Scroll with PgUp/PgDn or ctrl+u/ctrl+d; End resumes follow. Swarm dashboard: ctrl+w.")
+	m.appendLine("Press ? for help. Submit with ctrl+s. Search with ctrl+f. Slash commands such as /help run from the prompt. Scroll with PgUp/PgDn or ctrl+u/ctrl+d; End resumes follow. Swarm dashboard: ctrl+w.")
 	m.syncTranscript()
 	return m
 }
@@ -208,6 +213,17 @@ func (m bubbleModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case tea.MouseWheelMsg:
 		return m.handleMouse(x)
 	case tea.KeyPressMsg:
+		if m.searchActive {
+			return m.updateSearch(x)
+		}
+		if (x.String() == "n" || x.String() == "N") && len(m.searchMatches) > 0 {
+			if x.String() == "N" {
+				m.previousSearchMatch()
+			} else {
+				m.nextSearchMatch()
+			}
+			return m, nil
+		}
 		if x.String() == "?" && m.dialog != dialogHelp {
 			m.helpReturnDialog = m.dialog
 			m.dialog = dialogHelp
@@ -233,6 +249,9 @@ func (m bubbleModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return updated, cmd
 		}
 		switch x.String() {
+		case "ctrl+f":
+			m.startSearch()
+			return m, nil
 		case "ctrl+c":
 			return m, tea.Quit
 		case "ctrl+s":
@@ -468,7 +487,7 @@ func (m bubbleModel) View() tea.View {
 		v.AltScreen = true
 		return v
 	}
-	inputTitle := m.theme.Help.Render("ctrl+s submit · PgUp/PgDn scroll · End follow · ctrl+o sessions · ctrl+p model · ctrl+t tree · ctrl+w swarm · ? help · ctrl+c quit")
+	inputTitle := m.theme.Help.Render(m.inputTitle())
 	body := lipgloss.JoinVertical(lipgloss.Left,
 		m.headerView(),
 		m.theme.Viewport.Width(max(1, m.width-2)).Render(m.viewport.View()),
@@ -495,6 +514,17 @@ func (m bubbleModel) View() tea.View {
 	v.MouseMode = tea.MouseModeCellMotion
 	v.WindowTitle = "Erasmus"
 	return v
+}
+
+func (m bubbleModel) inputTitle() string {
+	if m.searchActive {
+		return "search: " + m.searchQuery + " · Enter find · Esc close"
+	}
+	base := "ctrl+s submit · ctrl+f search · /help commands · PgUp/PgDn scroll · End follow · ctrl+o sessions · ctrl+p model · ctrl+t tree · ctrl+w swarm · ? help · ctrl+c quit"
+	if len(m.searchMatches) > 0 {
+		base += fmt.Sprintf(" · n/N search %d/%d", m.searchIndex+1, len(m.searchMatches))
+	}
+	return base
 }
 
 func (m *bubbleModel) resize() {
@@ -663,6 +693,10 @@ func (m bubbleModel) helpDialogView() string {
 	b.WriteString("  ?             context help\n")
 	b.WriteString("  ctrl+c        quit\n\n")
 	b.WriteString("Transcript\n")
+	b.WriteString("  ctrl+f        search transcript\n")
+	b.WriteString("  enter         run search while search prompt is open\n")
+	b.WriteString("  n/N           next / previous match\n")
+	b.WriteString("  esc           close search prompt\n")
 	b.WriteString("  PgUp/PgDn     scroll page\n")
 	b.WriteString("  ctrl+u/d      scroll half page\n")
 	b.WriteString("  Home/End      top / resume follow at bottom\n")
@@ -709,7 +743,14 @@ func (m bubbleModel) writeCurrentModeHelp(b *strings.Builder) {
 	default:
 		b.WriteString("  type prompt   compose in input box\n")
 		b.WriteString("  ctrl+s        submit prompt\n")
-		b.WriteString("  /help         line-mode command help\n\n")
+		b.WriteString("  /help         command help\n")
+		b.WriteString("  /status       runtime status\n")
+		b.WriteString("  /model        current model\n")
+		b.WriteString("  /messages     recent transcript\n")
+		b.WriteString("  /sessions     list sessions\n")
+		b.WriteString("  /tree         session tree\n")
+		b.WriteString("  /compact      compact transcript\n")
+		b.WriteString("  /quit         exit\n\n")
 	}
 }
 
@@ -733,6 +774,98 @@ func (m bubbleModel) writeSwarmHelp(b *strings.Builder) {
 	b.WriteString("  enter         refresh selected server\n")
 	b.WriteString("  r             reload registry\n")
 	b.WriteString("  esc/ctrl+w    close dashboard\n\n")
+}
+
+func (m *bubbleModel) startSearch() {
+	m.searchActive = true
+	m.searchQuery = ""
+	m.searchMatches = nil
+	m.searchIndex = 0
+	m.status = "search"
+	m.err = ""
+	m.input.Blur()
+}
+
+func (m bubbleModel) updateSearch(key tea.KeyPressMsg) (tea.Model, tea.Cmd) {
+	switch key.String() {
+	case "esc":
+		m.searchActive = false
+		m.status = "ready"
+		m.input.Focus()
+		return m, nil
+	case "ctrl+c":
+		return m, tea.Quit
+	case "enter":
+		m.runSearch()
+		return m, nil
+	case "backspace":
+		if m.searchQuery != "" {
+			runes := []rune(m.searchQuery)
+			m.searchQuery = string(runes[:len(runes)-1])
+		}
+		return m, nil
+	case "n":
+		m.nextSearchMatch()
+		return m, nil
+	case "N":
+		m.previousSearchMatch()
+		return m, nil
+	}
+	if key.Text != "" {
+		m.searchQuery += key.Text
+		return m, nil
+	}
+	return m, nil
+}
+
+func (m *bubbleModel) runSearch() {
+	query := strings.TrimSpace(m.searchQuery)
+	m.searchMatches = nil
+	m.searchIndex = 0
+	if query == "" {
+		m.status = "search"
+		return
+	}
+	needle := strings.ToLower(query)
+	for i, line := range strings.Split(m.transcript, "\n") {
+		if strings.Contains(strings.ToLower(line), needle) {
+			m.searchMatches = append(m.searchMatches, i)
+		}
+	}
+	if len(m.searchMatches) == 0 {
+		m.status = "no matches"
+		return
+	}
+	m.status = fmt.Sprintf("match %d/%d", m.searchIndex+1, len(m.searchMatches))
+	m.gotoSearchMatch()
+}
+
+func (m *bubbleModel) nextSearchMatch() {
+	if len(m.searchMatches) == 0 {
+		m.runSearch()
+		return
+	}
+	m.searchIndex = (m.searchIndex + 1) % len(m.searchMatches)
+	m.status = fmt.Sprintf("match %d/%d", m.searchIndex+1, len(m.searchMatches))
+	m.gotoSearchMatch()
+}
+
+func (m *bubbleModel) previousSearchMatch() {
+	if len(m.searchMatches) == 0 {
+		m.runSearch()
+		return
+	}
+	m.searchIndex = (m.searchIndex - 1 + len(m.searchMatches)) % len(m.searchMatches)
+	m.status = fmt.Sprintf("match %d/%d", m.searchIndex+1, len(m.searchMatches))
+	m.gotoSearchMatch()
+}
+
+func (m *bubbleModel) gotoSearchMatch() {
+	if len(m.searchMatches) == 0 {
+		return
+	}
+	m.follow = false
+	m.viewport.SetYOffset(m.searchMatches[m.searchIndex])
 }
 
 func (m *bubbleModel) openSessionsDialog() (bubbleModel, tea.Cmd) {

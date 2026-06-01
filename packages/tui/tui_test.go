@@ -117,6 +117,98 @@ func TestModelDialogApplyUsesAppCallback(t *testing.T) {
 	}
 }
 
+func TestTranscriptSearchNavigatesMatches(t *testing.T) {
+	ctx := context.Background()
+	h, err := harness.New(ctx, harness.Config{
+		Session: memory.New("tui-search-test"),
+		Model:   model.Model{Provider: "fake", ID: "echo"},
+		Stream: func(ctx context.Context, req provider.Request) (<-chan provider.Event, error) {
+			return streamText("ok"), nil
+		},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	m := newBubbleModel(ctx, &App{Harness: h})
+	m.renderer = nil
+	m.width = 80
+	m.height = 12
+	for _, line := range []string{"alpha one", "alpha two", "alpha three", "alpha four", "bravo target", "charlie", "delta target", "echo", "foxtrot", "golf", "hotel", "india"} {
+		m.appendLine(line)
+	}
+	m.resize()
+
+	updated, _ := m.Update(tea.KeyPressMsg(tea.Key{Code: 'f', Mod: tea.ModCtrl}))
+	searching := updated.(bubbleModel)
+	if !searching.searchActive || searching.status != "search" {
+		t.Fatalf("search state = active:%v status:%q", searching.searchActive, searching.status)
+	}
+	for _, r := range "target" {
+		updated, _ = searching.Update(tea.KeyPressMsg(tea.Key{Text: string(r), Code: r}))
+		searching = updated.(bubbleModel)
+	}
+	updated, _ = searching.Update(tea.KeyPressMsg(tea.Key{Code: tea.KeyEnter}))
+	found := updated.(bubbleModel)
+	if got, want := found.searchQuery, "target"; got != want {
+		t.Fatalf("query = %q, want %q", got, want)
+	}
+	if len(found.searchMatches) != 2 || found.searchIndex != 0 {
+		t.Fatalf("matches = %v index=%d", found.searchMatches, found.searchIndex)
+	}
+	firstOffset := found.viewport.YOffset()
+	if firstOffset == 0 {
+		t.Fatal("search did not move viewport to first match")
+	}
+
+	updated, _ = found.Update(tea.KeyPressMsg(tea.Key{Text: "n", Code: 'n'}))
+	next := updated.(bubbleModel)
+	if next.searchIndex != 1 || next.viewport.YOffset() <= firstOffset {
+		t.Fatalf("next search index=%d offset=%d first=%d", next.searchIndex, next.viewport.YOffset(), firstOffset)
+	}
+	updated, _ = next.Update(tea.KeyPressMsg(tea.Key{Text: "N", Code: 'n', ShiftedCode: 'N'}))
+	prev := updated.(bubbleModel)
+	if prev.searchIndex != 0 || prev.viewport.YOffset() != firstOffset {
+		t.Fatalf("previous search index=%d offset=%d first=%d", prev.searchIndex, prev.viewport.YOffset(), firstOffset)
+	}
+}
+
+func TestSlashHelpCommandStillRunsFullScreen(t *testing.T) {
+	ctx := context.Background()
+	h, err := harness.New(ctx, harness.Config{
+		Session: memory.New("tui-slash-command-test"),
+		Model:   model.Model{Provider: "fake", ID: "echo"},
+		Stream: func(ctx context.Context, req provider.Request) (<-chan provider.Event, error) {
+			return streamText("ok"), nil
+		},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	m := newBubbleModel(ctx, &App{Harness: h})
+	m.input.SetValue("/help")
+	_, cmd := m.submit()
+	if cmd == nil {
+		t.Fatal("expected /help command")
+	}
+	msg := cmd()
+	done, ok := msg.(commandDoneMsg)
+	if !ok {
+		t.Fatalf("command msg = %#v", msg)
+	}
+	if done.err != nil {
+		t.Fatal(done.err)
+	}
+	if !strings.Contains(done.text, "commands:") || !strings.Contains(done.text, "/help") {
+		t.Fatalf("help output = %q", done.text)
+	}
+
+	updated, _ := m.Update(tea.KeyPressMsg(tea.Key{Text: "/", Code: '/'}))
+	got := updated.(bubbleModel)
+	if got.searchActive {
+		t.Fatal("slash opened search")
+	}
+}
+
 func streamText(text string) <-chan provider.Event {
 	ch := make(chan provider.Event, 3)
 	ch <- provider.MessageStart{MessageID: "m1"}
