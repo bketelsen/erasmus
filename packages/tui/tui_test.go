@@ -118,6 +118,45 @@ func TestModelDialogApplyUsesAppCallback(t *testing.T) {
 	}
 }
 
+func TestNamedBubbleThemeIncludesAdditionalBuiltins(t *testing.T) {
+	tests := []struct {
+		name    string
+		want    string
+		glamour string
+	}{
+		{name: "light", want: "light", glamour: "light"},
+		{name: "high-contrast", want: "high-contrast", glamour: "notty"},
+		{name: "contrast", want: "high-contrast", glamour: "notty"},
+		{name: "dracula", want: "dracula", glamour: "dracula"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			theme := namedBubbleTheme(tt.name)
+			if theme.Name != tt.want || theme.Glamour != tt.glamour {
+				t.Fatalf("theme = %q/%q, want %q/%q", theme.Name, theme.Glamour, tt.want, tt.glamour)
+			}
+		})
+	}
+}
+
+func TestBubbleModelUsesConfiguredTheme(t *testing.T) {
+	ctx := context.Background()
+	h, err := harness.New(ctx, harness.Config{
+		Session: memory.New("tui-theme-test"),
+		Model:   model.Model{Provider: "fake", ID: "echo"},
+		Stream: func(ctx context.Context, req provider.Request) (<-chan provider.Event, error) {
+			return streamText("ok"), nil
+		},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	m := newBubbleModel(ctx, &App{Harness: h, Theme: "dracula"})
+	if m.theme.Name != "dracula" || m.theme.Glamour != "dracula" {
+		t.Fatalf("theme = %q/%q, want dracula/dracula", m.theme.Name, m.theme.Glamour)
+	}
+}
+
 func TestTranscriptSearchNavigatesMatches(t *testing.T) {
 	ctx := context.Background()
 	h, err := harness.New(ctx, harness.Config{

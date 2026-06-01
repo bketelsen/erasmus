@@ -174,10 +174,73 @@ func plainBubbleTheme() bubbleTheme {
 	}
 }
 
+func lightBubbleTheme() bubbleTheme {
+	return bubbleTheme{
+		Name:        "light",
+		Glamour:     "light",
+		Brand:       lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("25")),
+		Muted:       lipgloss.NewStyle().Foreground(lipgloss.Color("240")),
+		Error:       lipgloss.NewStyle().Foreground(lipgloss.Color("124")),
+		Help:        lipgloss.NewStyle().Foreground(lipgloss.Color("244")),
+		ReadyPill:   lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("231")).Background(lipgloss.Color("29")).Padding(0, 1),
+		RunningPill: lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("16")).Background(lipgloss.Color("220")).Padding(0, 1),
+		ErrorPill:   lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("231")).Background(lipgloss.Color("124")).Padding(0, 1),
+		Header:      lipgloss.NewStyle().Border(lipgloss.NormalBorder(), false, false, true, false).BorderForeground(lipgloss.Color("250")).Padding(0, 1),
+		Viewport:    lipgloss.NewStyle().Border(lipgloss.RoundedBorder()).BorderForeground(lipgloss.Color("252")).Padding(0, 1),
+		Input:       lipgloss.NewStyle().Border(lipgloss.RoundedBorder()).BorderForeground(lipgloss.Color("32")).Padding(0, 1),
+		Dialog:      lipgloss.NewStyle().Border(lipgloss.DoubleBorder()).BorderForeground(lipgloss.Color("61")).Padding(0, 1),
+		Selected:    lipgloss.NewStyle().Foreground(lipgloss.Color("231")).Background(lipgloss.Color("25")).Padding(0, 1),
+	}
+}
+
+func highContrastBubbleTheme() bubbleTheme {
+	return bubbleTheme{
+		Name:        "high-contrast",
+		Glamour:     "notty",
+		Brand:       lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("15")),
+		Muted:       lipgloss.NewStyle().Foreground(lipgloss.Color("15")),
+		Error:       lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("9")),
+		Help:        lipgloss.NewStyle().Foreground(lipgloss.Color("15")),
+		ReadyPill:   lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("0")).Background(lipgloss.Color("15")).Padding(0, 1),
+		RunningPill: lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("0")).Background(lipgloss.Color("11")).Padding(0, 1),
+		ErrorPill:   lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("15")).Background(lipgloss.Color("9")).Padding(0, 1),
+		Header:      lipgloss.NewStyle().Bold(true).Border(lipgloss.NormalBorder(), false, false, true, false).BorderForeground(lipgloss.Color("15")).Padding(0, 1),
+		Viewport:    lipgloss.NewStyle().Border(lipgloss.NormalBorder()).BorderForeground(lipgloss.Color("15")).Padding(0, 1),
+		Input:       lipgloss.NewStyle().Border(lipgloss.ThickBorder()).BorderForeground(lipgloss.Color("15")).Padding(0, 1),
+		Dialog:      lipgloss.NewStyle().Border(lipgloss.ThickBorder()).BorderForeground(lipgloss.Color("15")).Padding(0, 1),
+		Selected:    lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("0")).Background(lipgloss.Color("15")).Padding(0, 1),
+	}
+}
+
+func draculaBubbleTheme() bubbleTheme {
+	return bubbleTheme{
+		Name:        "dracula",
+		Glamour:     "dracula",
+		Brand:       lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("212")),
+		Muted:       lipgloss.NewStyle().Foreground(lipgloss.Color("103")),
+		Error:       lipgloss.NewStyle().Foreground(lipgloss.Color("203")),
+		Help:        lipgloss.NewStyle().Foreground(lipgloss.Color("103")),
+		ReadyPill:   lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("16")).Background(lipgloss.Color("84")).Padding(0, 1),
+		RunningPill: lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("16")).Background(lipgloss.Color("228")).Padding(0, 1),
+		ErrorPill:   lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("16")).Background(lipgloss.Color("203")).Padding(0, 1),
+		Header:      lipgloss.NewStyle().Border(lipgloss.NormalBorder(), false, false, true, false).BorderForeground(lipgloss.Color("60")).Padding(0, 1),
+		Viewport:    lipgloss.NewStyle().Border(lipgloss.RoundedBorder()).BorderForeground(lipgloss.Color("60")).Padding(0, 1),
+		Input:       lipgloss.NewStyle().Border(lipgloss.RoundedBorder()).BorderForeground(lipgloss.Color("141")).Padding(0, 1),
+		Dialog:      lipgloss.NewStyle().Border(lipgloss.DoubleBorder()).BorderForeground(lipgloss.Color("212")).Padding(0, 1),
+		Selected:    lipgloss.NewStyle().Foreground(lipgloss.Color("16")).Background(lipgloss.Color("212")).Padding(0, 1),
+	}
+}
+
 func namedBubbleTheme(name string) bubbleTheme {
 	switch strings.ToLower(strings.TrimSpace(name)) {
 	case "plain", "mono", "monochrome":
 		return plainBubbleTheme()
+	case "light":
+		return lightBubbleTheme()
+	case "high-contrast", "contrast", "hc":
+		return highContrastBubbleTheme()
+	case "dracula":
+		return draculaBubbleTheme()
 	default:
 		return darkBubbleTheme()
 	}
