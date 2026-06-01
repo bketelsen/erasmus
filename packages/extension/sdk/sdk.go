@@ -12,6 +12,7 @@ import (
 
 	"erasmus/packages/extension/proto"
 	"erasmus/packages/message"
+	"erasmus/packages/skill"
 	"erasmus/packages/tool"
 )
 
@@ -95,6 +96,15 @@ func SetActiveToolsAction(names ...string) proto.HostAction {
 		Names []string `json:"names"`
 	}{Names: append([]string(nil), names...)})
 	return proto.HostAction{Type: "set_active_tools", Data: data}
+}
+
+// SetResourcesAction asks the host to patch runtime prompt resources.
+func SetResourcesAction(activeTools []string, skills []skill.Skill) proto.HostAction {
+	data, _ := json.Marshal(struct {
+		ActiveTools []string      `json:"active_tools,omitempty"`
+		Skills      []skill.Skill `json:"skills,omitempty"`
+	}{ActiveTools: append([]string(nil), activeTools...), Skills: append([]skill.Skill(nil), skills...)})
+	return proto.HostAction{Type: "set_resources", Data: data}
 }
 
 // SavePointAction asks the host to persist a checkpoint marker.

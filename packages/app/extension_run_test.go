@@ -106,6 +106,33 @@ for line in sys.stdin:
 	}
 }
 
+func TestRunConfiguredAppliesExtensionSetResourcesRequests(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("script test")
+	}
+	dir := t.TempDir()
+	t.Setenv("XDG_STATE_HOME", filepath.Join(dir, "state"))
+	path := filepath.Join(dir, "ext.py")
+	script := `#!/usr/bin/env python3
+import json, sys
+print(json.dumps({"type":"hello","data":{"name":"resources-test","version":"1"}}), flush=True)
+print(json.dumps({"type":"host_action","data":{"type":"set_resources","data":{"active_tools":["read"],"skills":[{"name":"extension-review","description":"Review from extension","body":"Review carefully.","source":"extension"}]}}}), flush=True)
+for line in sys.stdin:
+    pass
+`
+	if err := os.WriteFile(path, []byte(script), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	var out bytes.Buffer
+	err := app.RunConfigured(context.Background(), app.RunOptions{Prompt: "tool write", Out: &out}, config.Config{Provider: "fake", Model: "echo", Extensions: []config.ExtensionConfig{{Command: path}}}, auth.NewMemoryStore())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(out.String(), "fake response: tool write") {
+		t.Fatalf("output:\n%s", out.String())
+	}
+}
+
 func TestRunConfiguredAppliesExtensionSavePointRequests(t *testing.T) {
 	if runtime.GOOS == "windows" {
 		t.Skip("script test")

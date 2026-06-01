@@ -33,6 +33,7 @@ The extension answers with matching result frames:
 {"type":"command_result","id":"hello-1","data":{"id":"hello-1","actions":[{"type":"print","data":{"text":"hello Ada"}}]}}
 {"type":"host_action","data":{"type":"print","data":{"text":"saw settled"}}}
 {"type":"host_action","data":{"type":"set_active_tools","data":{"names":["read","bash"]}}}
+{"type":"host_action","data":{"type":"set_resources","data":{"active_tools":["read"],"skills":[{"name":"review","body":"Review carefully."}]}}}
 {"type":"host_action","data":{"type":"save_point","data":{"label":"before-change","data":{"source":"extension"}}}}
 {"type":"hook_result","id":"context-transform-1","data":{"id":"context-transform-1","messages":[{"role":"user","content":[{"text":"rewritten"}]}]}}
 {"type":"hook_result","id":"provider-request-1","data":{"id":"provider-request-1","deny":true,"error":"blocked by policy"}}
@@ -48,6 +49,7 @@ Supported host actions:
 
 - `print`: asks the host to display text when the caller supports host output.
 - `set_active_tools`: asks the host to replace the active tool selection for subsequent runs or, during one-shot startup, before the prompt begins.
+- `set_resources`: asks the host to patch runtime resources. Currently supported fields are `active_tools` and `skills`; tool definitions are still supplied through startup registration.
 - `save_point`: asks the host to persist a checkpoint marker when the runtime supports durable sessions.
 
 ## Raw Example
@@ -153,6 +155,6 @@ Startup errors and command/tool failures include the log path when available. In
 
 ## Current Gaps
 
-The protocol currently covers startup registration, tools, commands, command host actions, runtime event subscriptions, context transforms, provider request/response hooks, diagnostics, and configured subprocess tools.
+The protocol currently covers startup registration, tools, commands, command host actions, runtime event subscriptions, context transforms, provider request/response hooks, active-tool and skill resource mutation requests, diagnostics, and configured subprocess tools.
 
-The stable protocol does not yet expose broad resource mutation requests beyond active-tool selection, panels, skills, or background lifecycle controls. Keep extensions headless and avoid depending on a specific frontend.
+The stable protocol does not yet expose dynamic tool-definition mutation, panels, or background lifecycle controls. Keep extensions headless and avoid depending on a specific frontend.

@@ -19,6 +19,7 @@ import (
 	"erasmus/packages/session"
 	"erasmus/packages/session/jsonl"
 	"erasmus/packages/session/memory"
+	"erasmus/packages/skill"
 	"erasmus/packages/tool"
 )
 
@@ -194,6 +195,24 @@ func applyExtensionHostActions(ctx context.Context, h *harness.Harness, actions 
 			}
 			if err := h.SetActiveTools(ctx, data.Names); err != nil {
 				return err
+			}
+		case "set_resources":
+			var data struct {
+				ActiveTools []string      `json:"active_tools,omitempty"`
+				Skills      []skill.Skill `json:"skills,omitempty"`
+			}
+			if err := json.Unmarshal(action.Data, &data); err != nil {
+				return err
+			}
+			if data.Skills != nil {
+				if err := h.SetSkills(ctx, data.Skills); err != nil {
+					return err
+				}
+			}
+			if data.ActiveTools != nil {
+				if err := h.SetActiveTools(ctx, data.ActiveTools); err != nil {
+					return err
+				}
 			}
 		case "save_point":
 			var data struct {

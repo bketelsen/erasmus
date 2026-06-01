@@ -11,6 +11,7 @@ import (
 
 	"erasmus/packages/extension/proto"
 	"erasmus/packages/extension/sdk"
+	"erasmus/packages/skill"
 )
 
 func TestRunWithIORegistersAndDispatchesToolsAndCommands(t *testing.T) {
@@ -151,6 +152,16 @@ func TestSetActiveToolsAction(t *testing.T) {
 		t.Fatalf("type = %q", action.Type)
 	}
 	if !strings.Contains(string(action.Data), `"read"`) || !strings.Contains(string(action.Data), `"write"`) {
+		t.Fatalf("data = %s", action.Data)
+	}
+}
+
+func TestSetResourcesAction(t *testing.T) {
+	action := sdk.SetResourcesAction([]string{"read"}, []skill.Skill{{Name: "review", Body: "Review carefully."}})
+	if action.Type != "set_resources" {
+		t.Fatalf("type = %q", action.Type)
+	}
+	if !strings.Contains(string(action.Data), `"active_tools":["read"]`) || !strings.Contains(string(action.Data), `"name":"review"`) {
 		t.Fatalf("data = %s", action.Data)
 	}
 }
