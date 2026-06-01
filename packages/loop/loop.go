@@ -37,6 +37,7 @@ type Config struct {
 
 // Hooks customizes low-level loop behavior.
 type Hooks struct {
+	TransformContext      func(context.Context, []message.Message) ([]message.Message, error)
 	BeforeProviderRequest func(context.Context, *provider.Request) error
 	BeforeToolCall        func(context.Context, ToolCallContext) (ToolDecision, error)
 	AfterToolCall         func(context.Context, ToolResultContext) (ToolResultPatch, error)
@@ -107,10 +108,23 @@ func run(ctx context.Context, messages []message.Message, c Context, cfg Config,
 			return messages, err
 		}
 
+		requestMessages := copyMessages(messages)
+		if cfg.Hooks.TransformContext != nil {
+			next, err := cfg.Hooks.TransformContext(ctx, requestMessages)
+			if err != nil {
+				emitErr := emitEvent(emit, event.TurnEnd{Step: step, Err: err.Error()})
+				if emitErr != nil {
+					return messages, emitErr
+				}
+				return messages, err
+			}
+			requestMessages = copyMessages(next)
+		}
+
 		req := provider.Request{
 			Model:     cfg.Model,
 			System:    c.SystemPrompt,
-			Messages:  copyMessages(messages),
+			Messages:  requestMessages,
 			Reasoning: cfg.Reasoning,
 			MaxTokens: cfg.MaxTokens,
 			SessionID: cfg.SessionID,

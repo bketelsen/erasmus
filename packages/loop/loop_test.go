@@ -359,6 +359,55 @@ func TestRunBeforeProviderRequestHookCanReject(t *testing.T) {
 	}
 }
 
+func TestRunTransformContextHookMutatesProviderMessages(t *testing.T) {
+	seen := false
+	stream := func(ctx context.Context, req provider.Request) (<-chan provider.Event, error) {
+		seen = true
+		if len(req.Messages) != 1 {
+			t.Fatalf("messages len = %d, want 1", len(req.Messages))
+		}
+		if got := req.Messages[0].Content[0].(message.Text).Text; got != "transformed" {
+			t.Fatalf("provider message = %q, want transformed", got)
+		}
+		return streamEvents(ctx, provider.MessageStart{MessageID: "a1"}, provider.TextDelta{Text: "done"}, provider.MessageEnd{StopReason: "end_turn"}), nil
+	}
+	messages, err := loop.Run(context.Background(), []message.Message{{Role: message.RoleUser, Content: []message.Content{message.Text{Text: "original"}}}}, loop.Context{}, loop.Config{
+		Model:  model.Model{Provider: "fake", ID: "test"},
+		Stream: stream,
+		Hooks: loop.Hooks{TransformContext: func(ctx context.Context, messages []message.Message) ([]message.Message, error) {
+			messages[0].Content = []message.Content{message.Text{Text: "transformed"}}
+			return messages, nil
+		}},
+	}, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !seen {
+		t.Fatal("provider stream was not called")
+	}
+	if got := messages[0].Content[0].(message.Text).Text; got != "original" {
+		t.Fatalf("committed message = %q, want original", got)
+	}
+}
+
+func TestRunTransformContextHookCanReject(t *testing.T) {
+	hookErr := errors.New("context blocked")
+	stream := func(ctx context.Context, req provider.Request) (<-chan provider.Event, error) {
+		t.Fatal("provider stream should not be called")
+		return nil, nil
+	}
+	_, err := loop.Run(context.Background(), []message.Message{{Role: message.RoleUser}}, loop.Context{}, loop.Config{
+		Model:  model.Model{Provider: "fake", ID: "test"},
+		Stream: stream,
+		Hooks: loop.Hooks{TransformContext: func(context.Context, []message.Message) ([]message.Message, error) {
+			return nil, hookErr
+		}},
+	}, nil)
+	if !errors.Is(err, hookErr) {
+		t.Fatalf("err = %v, want %v", err, hookErr)
+	}
+}
+
 func TestRunStopsWhenContextCanceled(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	stream := func(ctx context.Context, req provider.Request) (<-chan provider.Event, error) {
