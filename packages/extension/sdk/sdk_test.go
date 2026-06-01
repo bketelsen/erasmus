@@ -111,6 +111,16 @@ func TestRunWithIOSubscribesAndHandlesEvents(t *testing.T) {
 	}
 }
 
+func TestSetActiveToolsAction(t *testing.T) {
+	action := sdk.SetActiveToolsAction("read", "write")
+	if action.Type != "set_active_tools" {
+		t.Fatalf("type = %q", action.Type)
+	}
+	if !strings.Contains(string(action.Data), `"read"`) || !strings.Contains(string(action.Data), `"write"`) {
+		t.Fatalf("data = %s", action.Data)
+	}
+}
+
 func TestRunWithIOReturnsProtocolErrorsAsFrames(t *testing.T) {
 	toolCall, err := proto.EncodeFrame("tool_call", "tool-1", proto.ToolCall{ID: "tool-1", Name: "fail", Args: json.RawMessage(`{}`)})
 	if err != nil {

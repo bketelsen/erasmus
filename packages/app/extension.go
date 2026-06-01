@@ -133,6 +133,18 @@ func (e *ConfiguredExtensions) Close() {
 	}
 }
 
+// DrainHostActions drains queued host actions from all subprocesses.
+func (e *ConfiguredExtensions) DrainHostActions() []extension.HostAction {
+	if e == nil {
+		return nil
+	}
+	var out []extension.HostAction
+	for _, proc := range e.procs {
+		out = append(out, proc.Manager().DrainHostActions()...)
+	}
+	return out
+}
+
 // Commands returns all registered subprocess commands.
 func (e *ConfiguredExtensions) Commands() []extension.Command {
 	if e == nil {

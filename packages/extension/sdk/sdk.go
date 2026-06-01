@@ -84,6 +84,14 @@ func PrintAction(text string) proto.HostAction {
 	return proto.HostAction{Type: "print", Data: data}
 }
 
+// SetActiveToolsAction asks the host to replace the active tool selection.
+func SetActiveToolsAction(names ...string) proto.HostAction {
+	data, _ := json.Marshal(struct {
+		Names []string `json:"names"`
+	}{Names: append([]string(nil), names...)})
+	return proto.HostAction{Type: "set_active_tools", Data: data}
+}
+
 type runner struct {
 	ctx context.Context
 	ext Extension

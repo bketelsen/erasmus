@@ -29,11 +29,17 @@ The extension answers with matching result frames:
 {"type":"tool_result","id":"echo-1","data":{"id":"echo-1","result":{"content":[{"text":"hi"}]}}}
 {"type":"command_result","id":"hello-1","data":{"id":"hello-1","actions":[{"type":"print","data":{"text":"hello Ada"}}]}}
 {"type":"host_action","data":{"type":"print","data":{"text":"saw settled"}}}
+{"type":"host_action","data":{"type":"set_active_tools","data":{"names":["read","bash"]}}}
 ```
 
 Tool result `content` uses Erasmus canonical message content. Text parts are encoded as `{"text":"..."}`.
 
 `subscribe` lets an extension request runtime events by event type. Use `"*"` to request every forwarded event. Event delivery is best-effort and currently one-way; extensions should not block host progress waiting for event acknowledgement.
+
+Supported host actions:
+
+- `print`: asks the host to display text when the caller supports host output.
+- `set_active_tools`: asks the host to replace the active tool selection for subsequent runs or, during one-shot startup, before the prompt begins.
 
 ## Raw Example
 
@@ -136,4 +142,4 @@ Startup errors and command/tool failures include the log path when available. In
 
 The protocol currently covers startup registration, tools, commands, command host actions, runtime event subscriptions, diagnostics, and configured subprocess tools.
 
-The stable protocol does not yet expose provider payload hooks, context transforms, save points, resource mutation requests, panels, skills, or background lifecycle controls. Keep extensions headless and avoid depending on a specific frontend.
+The stable protocol does not yet expose provider payload hooks, context transforms, save-point creation requests, broad resource mutation requests beyond active-tool selection, panels, skills, or background lifecycle controls. Keep extensions headless and avoid depending on a specific frontend.

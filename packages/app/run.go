@@ -12,6 +12,7 @@ import (
 	"erasmus/packages/auth"
 	"erasmus/packages/config"
 	"erasmus/packages/event"
+	"erasmus/packages/extension"
 	"erasmus/packages/harness"
 	"erasmus/packages/message"
 	"erasmus/packages/provider"
@@ -75,6 +76,11 @@ func RunConfigured(ctx context.Context, opts RunOptions, cfg config.Config, stor
 	if err != nil {
 		return err
 	}
+	if extensions != nil {
+		if err := applyExtensionHostActions(ctx, h, extensions.DrainHostActions()); err != nil {
+			return err
+		}
+	}
 	events, err := h.Prompt(ctx, opts.Prompt, harness.PromptOptions{})
 	if err != nil {
 		return err
@@ -82,6 +88,9 @@ func RunConfigured(ctx context.Context, opts RunOptions, cfg config.Config, stor
 	for ev := range events {
 		if extensions != nil {
 			if err := extensions.PublishEvent(ctx, ev); err != nil {
+				return err
+			}
+			if err := applyExtensionHostActions(ctx, h, extensions.DrainHostActions()); err != nil {
 				return err
 			}
 		}
@@ -138,6 +147,24 @@ func RunFake(ctx context.Context, opts RunOptions) error {
 		return err
 	}
 	_, _ = fmt.Fprintln(out)
+	return nil
+}
+
+func applyExtensionHostActions(ctx context.Context, h *harness.Harness, actions []extension.HostAction) error {
+	for _, action := range actions {
+		switch action.Type {
+		case "set_active_tools":
+			var data struct {
+				Names []string `json:"names"`
+			}
+			if err := json.Unmarshal(action.Data, &data); err != nil {
+				return err
+			}
+			if err := h.SetActiveTools(ctx, data.Names); err != nil {
+				return err
+			}
+		}
+	}
 	return nil
 }
 
