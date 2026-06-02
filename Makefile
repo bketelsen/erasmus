@@ -98,6 +98,23 @@ clean:
 release-snapshot: check-goreleaser
 	@"$(GORELEASER)" release --snapshot --clean
 
+bump: ## generate a new version with svu
+	@$(MAKE) build
+	@$(MAKE) test
+	@$(MAKE) fmt
+	@$(MAKE) lint
+	@if [ -n "$$(git status --porcelain)" ]; then \
+		echo "Working directory is not clean. Please commit or stash changes before bumping version."; \
+		exit 1; \
+	fi
+	@echo "Creating new tag..."
+	@version=$$(svu next); \
+		git tag -a $$version -m "Version $$version"; \
+		echo "Tagged version $$version"; \
+		echo "Pushing tag $$version to origin..."; \
+		git push origin $$version
+
+
 check-go:
 	@if ! ([ -x "$(GO)" ] || command -v "$(GO)" >/dev/null 2>&1); then \
 		printf '%s\n' "error: Go toolchain not found."; \
