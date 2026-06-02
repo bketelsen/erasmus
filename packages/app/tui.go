@@ -20,6 +20,8 @@ import (
 	"github.com/bketelsen/erasmus/packages/tui"
 )
 
+const defaultTUIMaxSteps = 80
+
 // TUIOptions configures the line-oriented TUI MVP.
 type TUIOptions struct {
 	In            io.Reader
@@ -159,6 +161,7 @@ func buildTUIHarness(ctx context.Context, cfg config.Config, store auth.Store, s
 		Auth:       store,
 		Skills:     append(skills, extensionSkills...),
 		ExtraTools: extraTools,
+		MaxSteps:   defaultTUIMaxSteps,
 	})
 	if err != nil {
 		cleanup()

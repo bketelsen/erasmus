@@ -61,6 +61,20 @@ func TestResolveHarnessConfigBuildsFakeStreamWhenOmitted(t *testing.T) {
 	}
 }
 
+func TestResolveHarnessConfigAppliesMaxSteps(t *testing.T) {
+	resolved, err := app.ResolveHarnessConfig(context.Background(), app.ResolveOptions{
+		Session:  memory.New("test"),
+		Stream:   noopStream,
+		MaxSteps: 80,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if resolved.Harness.MaxSteps != 80 {
+		t.Fatalf("max steps = %d, want 80", resolved.Harness.MaxSteps)
+	}
+}
+
 func TestResolveHarnessConfigBuildsOpenAIStreamFromAuth(t *testing.T) {
 	store := auth.NewMemoryStore()
 	if err := store.Set(context.Background(), auth.Credential{Provider: "openai", APIKey: "key"}); err != nil {

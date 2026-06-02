@@ -34,6 +34,7 @@ type ResolveOptions struct {
 	Auth       auth.Store
 	Skills     []skill.Skill
 	ExtraTools tool.Registry
+	MaxSteps   int
 }
 
 // Resolved is an app-level resolved runtime configuration.
@@ -83,6 +84,7 @@ func ResolveHarnessConfig(ctx context.Context, opts ResolveOptions) (Resolved, e
 		Prompt:    prompt.StaticBuilder{},
 		Skills:    opts.Skills,
 		Tools:     registry,
+		MaxSteps:  opts.MaxSteps,
 		ConfirmToolCall: func(context.Context, loop.ToolCallContext) (bool, error) {
 			return true, nil
 		},

@@ -74,6 +74,12 @@ func TestDefaultTUISessionPath(t *testing.T) {
 	}
 }
 
+func TestDefaultTUIMaxSteps(t *testing.T) {
+	if defaultTUIMaxSteps != 80 {
+		t.Fatalf("default TUI max steps = %d, want 80", defaultTUIMaxSteps)
+	}
+}
+
 func TestRunTUIFake(t *testing.T) {
 	var out bytes.Buffer
 	if err := RunTUIFake(context.Background(), TUIOptions{In: strings.NewReader("hello\n/help\n/status\n/model\n/tree\n/move 1\n/branch 1\n/quit\n"), Out: &out}); err != nil {
