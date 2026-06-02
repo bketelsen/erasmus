@@ -207,13 +207,13 @@ func processTask(ctx context.Context, opts options, t task) error {
 		return err
 	}
 	h, err := harness.New(ctx, harness.Config{
-		Session: sess,
-		Stream:  daemonFakeStream(),
-		Model: model.Model{Provider: "fake", ID: "task-daemon", DisplayName: "task daemon fake model", ContextWindow: 32000, MaxOutput: 2048},
+		Session:   sess,
+		Stream:    daemonFakeStream(),
+		Model:     model.Model{Provider: "fake", ID: "task-daemon", DisplayName: "task daemon fake model", ContextWindow: 32000, MaxOutput: 2048},
 		Reasoning: "low",
-		Prompt: prompt.StaticBuilder{Base: "You are an autonomous Erasmus task daemon. Process one inbox task, use tools when useful, and finish with a concise Markdown summary."},
-		Tools: tools.DefaultRegistry(policy),
-		MaxSteps: 4,
+		Prompt:    prompt.StaticBuilder{Base: "You are an autonomous Erasmus task daemon. Process one inbox task, use tools when useful, and finish with a concise Markdown summary."},
+		Tools:     tools.DefaultRegistry(policy),
+		MaxSteps:  4,
 	})
 	if err != nil {
 		return err
