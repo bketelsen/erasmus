@@ -410,6 +410,20 @@ func (h *Harness) Prompt(ctx context.Context, text string, opts PromptOptions) (
 	return ch, nil
 }
 
+// PromptMessages starts a run from caller-built messages, mirroring Prompt but
+// preserving each message's role and metadata. It is intended for embedders that
+// need to inject a synthetic turn (e.g. a background-task notification) rather
+// than a plain user text prompt.
+func (h *Harness) PromptMessages(ctx context.Context, msgs []message.Message) (<-chan event.Event, error) {
+	ch, unsubscribe := h.eventChan()
+	if err := h.agent.PromptMessages(ctx, msgs); err != nil {
+		unsubscribe()
+		close(ch)
+		return nil, err
+	}
+	return ch, nil
+}
+
 // Continue continues the session.
 func (h *Harness) Continue(ctx context.Context) (<-chan event.Event, error) {
 	if h.hooks.BeforeAgentStart != nil {
