@@ -52,3 +52,6 @@ go.work.sum
 # Logs and temp files
 *.log
 /tmp/
+
+#direnv
+.envrc
