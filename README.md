@@ -101,6 +101,8 @@ TUI sessions can be overridden with `--session`, `--memory`, or `ERASMUS_SESSION
 
 - `examples/godom`: browser-based harness application using godom.
 - `examples/extension-go`: minimal Go subprocess extension.
+- `examples/task-daemon`: autonomous task daemon around durable harness sessions.
+- `examples/swarm-workflow`: named-agent swarm workflow with planner, reviewer, and executor agents.
 
 Validate examples with:
 
