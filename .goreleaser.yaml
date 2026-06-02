@@ -58,17 +58,3 @@ release:
   draft: true
   replace_existing_draft: true
 
-sboms:
-  - artifacts: archive
-
-signs:
-  - cmd: cosign
-    artifacts: checksum
-    signature: '${artifact}.sig'
-    args:
-      - sign-blob
-      - --yes
-      - --output-signature=${signature}
-      - ${artifact}
-    env:
-      - COSIGN_EXPERIMENTAL=1
