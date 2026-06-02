@@ -1,10 +1,12 @@
 # Erasmus
 
-Erasmus is a Go-native agent harness and terminal product. The core runtime is reusable: CLI, TUI, RPC, swarm, examples, and extensions all build on the same durable harness.
+Erasmus is a Go-native harness SDK for building durable agent applications. The reusable harness is the heart of the project: it owns sessions, resources, tools, hooks, provider turns, and runtime events so applications can embed agent behavior without inheriting a terminal-first architecture.
+
+The `erasmus` CLI, TUI, RPC server, swarm runner, examples, and extensions are all built to exercise that same SDK end to end. That makes them practical testbeds for the harness and useful tools in their own right.
 
 Status: prerelease. APIs and file formats are still allowed to change before `v0.1.0`.
 
-## What It Provides
+## What The Harness SDK Provides
 
 - durable JSONL sessions with tree navigation and branching,
 - provider-independent message, tool, event, and session types,
@@ -12,8 +14,19 @@ Status: prerelease. APIs and file formats are still allowed to change before `v0
 - runtime model, reasoning, skill, and tool resource mutation,
 - compaction and checkpoints,
 - subprocess extensions with tools, commands, skills, hooks, resource actions, and runtime event subscriptions,
-- terminal UI, JSON-lines RPC, and background swarm frontends,
+- canonical runtime events for embedding, RPC, TUI, swarm, and extension consumers,
 - examples for web and extension embedding.
+
+## CLI And Frontends
+
+The checked-in `erasmus` binary is written against the public harness shape, so every frontend doubles as coverage for the SDK while remaining useful on its own:
+
+- `./erasmus run` drives a single harness run,
+- `./erasmus tui` provides an interactive terminal frontend,
+- `./erasmus rpc` exposes the harness through JSON lines,
+- swarm commands supervise background harnesses.
+
+For embedded agent applications, start with `packages/harness` and the supporting package APIs. For terminal workflows, the CLI is the reference application built on those same pieces.
 
 ## Build
 
