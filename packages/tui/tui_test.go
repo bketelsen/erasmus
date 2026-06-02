@@ -3,6 +3,7 @@ package tui
 import (
 	"bytes"
 	"context"
+	"strconv"
 	"strings"
 	"testing"
 
@@ -209,6 +210,36 @@ func TestTranscriptSearchNavigatesMatches(t *testing.T) {
 	prev := updated.(bubbleModel)
 	if prev.searchIndex != 0 || prev.viewport.YOffset() != firstOffset {
 		t.Fatalf("previous search index=%d offset=%d first=%d", prev.searchIndex, prev.viewport.YOffset(), firstOffset)
+	}
+}
+
+func TestBubbleViewKeepsFollowModeAtBottomAfterLayoutResize(t *testing.T) {
+	ctx := context.Background()
+	h, err := harness.New(ctx, harness.Config{
+		Session: memory.New("tui-follow-bottom-test"),
+		Model:   model.Model{Provider: "fake", ID: "echo"},
+		Stream: func(ctx context.Context, req provider.Request) (<-chan provider.Event, error) {
+			return streamText("ok"), nil
+		},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	m := newBubbleModel(ctx, &App{Harness: h})
+	m.renderer = nil
+	m.width = 80
+	m.height = 16
+	m.follow = true
+	m.viewport.SetWidth(74)
+	m.viewport.SetHeight(12)
+	for i := 1; i <= 40; i++ {
+		m.appendLine("line " + strconv.Itoa(i))
+	}
+	m.syncTranscript()
+
+	got := m.View().Content
+	if !strings.Contains(got, "line 40") {
+		t.Fatalf("follow-mode view is not at transcript bottom:\n%s", got)
 	}
 }
 

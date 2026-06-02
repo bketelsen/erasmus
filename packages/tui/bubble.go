@@ -581,6 +581,9 @@ func (m bubbleModel) View() tea.View {
 	dialog := m.activeDialogView()
 	reserved := lipgloss.Height(header) + lipgloss.Height(dialog) + lipgloss.Height(searchTitle) + lipgloss.Height(commandPopup) + lipgloss.Height(inputView) + m.theme.Viewport.GetVerticalFrameSize()
 	m.viewport.SetHeight(max(1, m.height-reserved))
+	if m.follow {
+		m.viewport.GotoBottom()
+	}
 	body := lipgloss.JoinVertical(lipgloss.Left,
 		header,
 		m.theme.Viewport.Width(max(1, m.width-2)).Render(m.viewport.View()),
