@@ -435,15 +435,3 @@ func extensionLogName(command string, t time.Time) string {
 	}
 	return t.UTC().Format("20060102T150405.000000000Z") + "-" + name + ".jsonl"
 }
-
-// StartConfiguredExtensions starts configured extension subprocesses and returns their resources.
-func StartConfiguredExtensions(ctx context.Context, cfg config.Config) (tool.Registry, []skill.Skill, func(), error) {
-	set, err := StartConfiguredExtensionSet(ctx, cfg)
-	if err != nil {
-		return nil, nil, nil, err
-	}
-	if set == nil {
-		return nil, nil, func() {}, nil
-	}
-	return set.Tools(), set.Skills(), set.Close, nil
-}
