@@ -216,6 +216,7 @@ func readAnthropicStream(body io.ReadCloser, out chan<- provider.Event) {
 	pendingTools := map[int]*pendingAnthropicTool{}
 	stopReason := "stop"
 	scanner := bufio.NewScanner(body)
+	scanner.Buffer(make([]byte, 0, 64*1024), 8*1024*1024)
 	for scanner.Scan() {
 		line := strings.TrimSpace(scanner.Text())
 		if line == "" || strings.HasPrefix(line, "event:") {
