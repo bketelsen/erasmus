@@ -1,0 +1,9 @@
+[Unit]
+Description=Run Erasmus GitHub housekeeping agent
+Documentation=https://github.com/bketelsen/erasmus
+
+[Service]
+Type=oneshot
+EnvironmentFile=%h/.config/erasmus/github-housekeeping-agent.env
+WorkingDirectory=%h
+ExecStart=%h/.local/bin/github-housekeeping-agent --repo=${HOUSEKEEPING_REPO} --state=%h/.local/state/erasmus/github-housekeeping-agent
