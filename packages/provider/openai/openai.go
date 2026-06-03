@@ -306,6 +306,7 @@ func (c *Client) readStream(body io.ReadCloser, out chan<- provider.Event) {
 	started := false
 	pendingTools := map[int]*pendingToolCall{}
 	scanner := bufio.NewScanner(body)
+	scanner.Buffer(make([]byte, 0, 64*1024), 8*1024*1024)
 	for scanner.Scan() {
 		line := strings.TrimSpace(scanner.Text())
 		if line == "" || strings.HasPrefix(line, ":") {
