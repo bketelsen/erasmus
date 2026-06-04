@@ -68,11 +68,74 @@ func (p GitHubCopilotDeviceProvider) Login(ctx context.Context, onAuth func(url,
 	if onAuth != nil {
 		onAuth(device.VerificationURI, "Enter code: "+device.UserCode)
 	}
-	githubAccess, err := p.pollForGitHubAccessToken(ctx, device)
+	user, err := p.pollForGitHubAccessToken(ctx, device)
 	if err != nil {
 		return nil, err
 	}
-	return p.Refresh(ctx, githubAccess)
+	tok, err := p.Refresh(ctx, user.AccessToken)
+	if err != nil {
+		return nil, err
+	}
+	tok.GitHubRefreshToken = user.RefreshToken
+	tok.GitHubTokenExpiry = user.Expiry
+	return tok, nil
+}
+
+// GitHubUserToken is a GitHub user-to-server token (ghu_) and its companion
+// refresh token (ghr_), obtained from the device flow or a refresh exchange.
+type GitHubUserToken struct {
+	AccessToken  string    // ghu_ user-to-server token
+	RefreshToken string    // ghr_ refresh token (may be empty for legacy tokens)
+	Expiry       time.Time // ghu_ expiry; zero when GitHub returns no expires_in
+}
+
+func githubUserToken(access, refresh string, expiresIn int) GitHubUserToken {
+	user := GitHubUserToken{AccessToken: access, RefreshToken: refresh}
+	if expiresIn > 0 {
+		user.Expiry = time.Now().Add(time.Duration(expiresIn) * time.Second)
+	}
+	return user
+}
+
+// RefreshGitHubToken exchanges a GitHub refresh token (ghr_) for a fresh GitHub
+// user token (ghu_), without re-running the device flow. GitHub rotates the
+// refresh token, so the returned RefreshToken should replace the stored one.
+func (p GitHubCopilotDeviceProvider) RefreshGitHubToken(ctx context.Context, refreshToken string) (GitHubUserToken, error) {
+	p = p.withDefaults()
+	if strings.TrimSpace(refreshToken) == "" {
+		return GitHubUserToken{}, fmt.Errorf("github refresh token is required")
+	}
+	form := url.Values{}
+	form.Set("client_id", p.clientID())
+	form.Set("grant_type", "refresh_token")
+	form.Set("refresh_token", refreshToken)
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, p.AccessTokenURL, strings.NewReader(form.Encode()))
+	if err != nil {
+		return GitHubUserToken{}, err
+	}
+	req.Header.Set("Accept", "application/json")
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	req.Header.Set("User-Agent", githubCopilotHeaders["User-Agent"])
+	var raw struct {
+		AccessToken      string `json:"access_token"`
+		RefreshToken     string `json:"refresh_token"`
+		ExpiresIn        int    `json:"expires_in"`
+		Error            string `json:"error"`
+		ErrorDescription string `json:"error_description"`
+	}
+	if err := p.doJSON(req, &raw); err != nil {
+		return GitHubUserToken{}, err
+	}
+	if raw.Error != "" {
+		if raw.ErrorDescription != "" {
+			return GitHubUserToken{}, fmt.Errorf("github token refresh failed: %s: %s", raw.Error, raw.ErrorDescription)
+		}
+		return GitHubUserToken{}, fmt.Errorf("github token refresh failed: %s", raw.Error)
+	}
+	if raw.AccessToken == "" {
+		return GitHubUserToken{}, fmt.Errorf("github token refresh returned no access token")
+	}
+	return githubUserToken(raw.AccessToken, raw.RefreshToken, raw.ExpiresIn), nil
 }
 
 // Refresh exchanges a GitHub access token for a fresh Copilot API token.
@@ -151,7 +214,7 @@ func (p GitHubCopilotDeviceProvider) startDeviceFlow(ctx context.Context) (githu
 	return githubCopilotDeviceCode{DeviceCode: raw.DeviceCode, UserCode: raw.UserCode, VerificationURI: raw.VerificationURI, Interval: raw.Interval, ExpiresIn: raw.ExpiresIn}, nil
 }
 
-func (p GitHubCopilotDeviceProvider) pollForGitHubAccessToken(ctx context.Context, device githubCopilotDeviceCode) (string, error) {
+func (p GitHubCopilotDeviceProvider) pollForGitHubAccessToken(ctx context.Context, device githubCopilotDeviceCode) (GitHubUserToken, error) {
 	deadline := time.Now().Add(time.Duration(device.ExpiresIn) * time.Second)
 	interval := time.Duration(device.Interval) * time.Second
 	if interval < time.Second {
@@ -159,7 +222,7 @@ func (p GitHubCopilotDeviceProvider) pollForGitHubAccessToken(ctx context.Contex
 	}
 	for time.Now().Before(deadline) {
 		if err := p.sleep(ctx, interval); err != nil {
-			return "", err
+			return GitHubUserToken{}, err
 		}
 		form := url.Values{}
 		form.Set("client_id", p.clientID())
@@ -167,22 +230,24 @@ func (p GitHubCopilotDeviceProvider) pollForGitHubAccessToken(ctx context.Contex
 		form.Set("grant_type", "urn:ietf:params:oauth:grant-type:device_code")
 		req, err := http.NewRequestWithContext(ctx, http.MethodPost, p.AccessTokenURL, strings.NewReader(form.Encode()))
 		if err != nil {
-			return "", err
+			return GitHubUserToken{}, err
 		}
 		req.Header.Set("Accept", "application/json")
 		req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 		req.Header.Set("User-Agent", githubCopilotHeaders["User-Agent"])
 		var raw struct {
 			AccessToken      string `json:"access_token"`
+			RefreshToken     string `json:"refresh_token"`
+			ExpiresIn        int    `json:"expires_in"`
 			Error            string `json:"error"`
 			ErrorDescription string `json:"error_description"`
 			Interval         int    `json:"interval"`
 		}
 		if err := p.doJSON(req, &raw); err != nil {
-			return "", err
+			return GitHubUserToken{}, err
 		}
 		if raw.AccessToken != "" {
-			return raw.AccessToken, nil
+			return githubUserToken(raw.AccessToken, raw.RefreshToken, raw.ExpiresIn), nil
 		}
 		switch raw.Error {
 		case "authorization_pending", "":
@@ -196,12 +261,12 @@ func (p GitHubCopilotDeviceProvider) pollForGitHubAccessToken(ctx context.Contex
 			continue
 		default:
 			if raw.ErrorDescription != "" {
-				return "", fmt.Errorf("device flow failed: %s: %s", raw.Error, raw.ErrorDescription)
+				return GitHubUserToken{}, fmt.Errorf("device flow failed: %s: %s", raw.Error, raw.ErrorDescription)
 			}
-			return "", fmt.Errorf("device flow failed: %s", raw.Error)
+			return GitHubUserToken{}, fmt.Errorf("device flow failed: %s", raw.Error)
 		}
 	}
-	return "", fmt.Errorf("device flow timed out")
+	return GitHubUserToken{}, fmt.Errorf("device flow timed out")
 }
 
 func (p GitHubCopilotDeviceProvider) withDefaults() GitHubCopilotDeviceProvider {

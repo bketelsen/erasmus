@@ -185,6 +185,92 @@ func TestGitHubCopilotDeviceLogin(t *testing.T) {
 	}
 }
 
+func TestGitHubCopilotDeviceLoginCapturesRefreshToken(t *testing.T) {
+	ctx := context.Background()
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("content-type", "application/json")
+		switch r.URL.Path {
+		case "/login/device/code":
+			_, _ = w.Write([]byte(`{"device_code":"device-123","user_code":"ABCD-EFGH","verification_uri":"https://github.com/login/device","interval":1,"expires_in":60}`))
+		case "/login/oauth/access_token":
+			_, _ = w.Write([]byte(`{"access_token":"ghu_user","refresh_token":"ghr_refresh","token_type":"bearer","scope":"read:user","expires_in":28800,"refresh_token_expires_in":15897600}`))
+		case "/copilot_internal/v2/token":
+			if got := r.Header.Get("Authorization"); got != "Bearer ghu_user" {
+				t.Fatalf("authorization = %q", got)
+			}
+			_, _ = w.Write([]byte(`{"token":"tid=1;proxy-ep=proxy.individual.githubcopilot.com;","expires_at":4102444800}`))
+		default:
+			t.Fatalf("unexpected path %s", r.URL.Path)
+		}
+	}))
+	defer srv.Close()
+
+	provider := GitHubCopilotDeviceProvider{
+		DeviceCodeURL:   srv.URL + "/login/device/code",
+		AccessTokenURL:  srv.URL + "/login/oauth/access_token",
+		CopilotTokenURL: srv.URL + "/copilot_internal/v2/token",
+		PollSleep:       func(context.Context, time.Duration) error { return nil },
+	}
+	tok, err := provider.Login(ctx, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if tok.RefreshToken != "ghu_user" {
+		t.Fatalf("RefreshToken (ghu_) = %q", tok.RefreshToken)
+	}
+	if tok.GitHubRefreshToken != "ghr_refresh" {
+		t.Fatalf("GitHubRefreshToken (ghr_) = %q", tok.GitHubRefreshToken)
+	}
+	if tok.GitHubTokenExpiry.IsZero() {
+		t.Fatalf("GitHubTokenExpiry not set: %+v", tok)
+	}
+	// ~8h ahead, within a generous window.
+	if d := time.Until(tok.GitHubTokenExpiry); d < 7*time.Hour || d > 9*time.Hour {
+		t.Fatalf("GitHubTokenExpiry delta = %s, want ~8h", d)
+	}
+}
+
+func TestRefreshGitHubToken(t *testing.T) {
+	ctx := context.Background()
+	var body string
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/login/oauth/access_token" {
+			t.Fatalf("unexpected path %s", r.URL.Path)
+		}
+		if err := r.ParseForm(); err != nil {
+			t.Fatal(err)
+		}
+		body = r.Form.Encode()
+		w.Header().Set("content-type", "application/json")
+		_, _ = w.Write([]byte(`{"access_token":"ghu_new","refresh_token":"ghr_new","token_type":"bearer","expires_in":28800,"refresh_token_expires_in":15897600}`))
+	}))
+	defer srv.Close()
+
+	provider := GitHubCopilotDeviceProvider{AccessTokenURL: srv.URL + "/login/oauth/access_token"}
+	user, err := provider.RefreshGitHubToken(ctx, "ghr_old")
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, want := range []string{"client_id=" + GitHubCopilotClientID, "grant_type=refresh_token", "refresh_token=ghr_old"} {
+		if !strings.Contains(body, want) {
+			t.Fatalf("refresh body missing %q: %s", want, body)
+		}
+	}
+	if user.AccessToken != "ghu_new" || user.RefreshToken != "ghr_new" {
+		t.Fatalf("refreshed github token = %+v", user)
+	}
+	if d := time.Until(user.Expiry); d < 7*time.Hour || d > 9*time.Hour {
+		t.Fatalf("github token expiry delta = %s, want ~8h", d)
+	}
+}
+
+func TestRefreshGitHubTokenRequiresRefreshToken(t *testing.T) {
+	provider := GitHubCopilotDeviceProvider{}
+	if _, err := provider.RefreshGitHubToken(context.Background(), ""); err == nil {
+		t.Fatal("expected error for empty refresh token")
+	}
+}
+
 func testIDToken(accountID string) string {
 	payload, _ := json.Marshal(map[string]any{"https://api.openai.com/auth": map[string]any{"chatgpt_account_id": accountID}})
 	return "hdr." + base64.RawURLEncoding.EncodeToString(payload) + ".sig"

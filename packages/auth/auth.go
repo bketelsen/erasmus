@@ -25,6 +25,13 @@ type OAuthToken struct {
 	ClientID     string    `json:"client_id,omitempty"`
 	IDToken      string    `json:"id_token,omitempty"`
 	AccountID    string    `json:"account_id,omitempty"`
+
+	// GitHub Copilot uses a two-level token model: RefreshToken holds the
+	// short-lived (~8h) GitHub user-to-server token (ghu_) used to mint Copilot
+	// API tokens, while GitHubRefreshToken holds the durable (~6mo) GitHub
+	// refresh token (ghr_) used to renew the ghu_ without re-running device flow.
+	GitHubRefreshToken string    `json:"github_refresh_token,omitempty"`
+	GitHubTokenExpiry  time.Time `json:"github_token_expiry,omitempty"`
 }
 
 // Expired reports whether the token is expired with a small safety margin.
@@ -33,6 +40,16 @@ func (t *OAuthToken) Expired() bool {
 		return false
 	}
 	return time.Now().After(t.Expiry.Add(-60 * time.Second))
+}
+
+// GitHubTokenExpired reports whether the stored GitHub user token (ghu_) is
+// expired with a small safety margin. A zero expiry is treated as not expired
+// so legacy credentials without an expiry continue to use the stored token.
+func (t *OAuthToken) GitHubTokenExpired() bool {
+	if t == nil || t.GitHubTokenExpiry.IsZero() {
+		return false
+	}
+	return time.Now().After(t.GitHubTokenExpiry.Add(-60 * time.Second))
 }
 
 // Store stores and resolves credentials.

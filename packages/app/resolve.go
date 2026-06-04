@@ -210,13 +210,35 @@ func refreshGitHubCopilotCredential(ctx context.Context, store auth.Store, cred 
 	if cred.OAuth.RefreshToken == "" {
 		return auth.Credential{}, fmt.Errorf("github-copilot OAuth token is expired and has no GitHub access token")
 	}
-	tok, err := gitHubCopilotDeviceProvider().Refresh(ctx, cred.OAuth.RefreshToken)
+	provider := gitHubCopilotDeviceProvider()
+	githubToken := cred.OAuth.RefreshToken
+	githubRefreshToken := cred.OAuth.GitHubRefreshToken
+	githubTokenExpiry := cred.OAuth.GitHubTokenExpiry
+
+	// Renew the short-lived GitHub user token (ghu_) from the durable refresh
+	// token (ghr_) when it has expired, so re-running the CLI login is only
+	// needed when the refresh token itself lapses (~6 months).
+	if githubRefreshToken != "" && cred.OAuth.GitHubTokenExpired() {
+		user, err := provider.RefreshGitHubToken(ctx, githubRefreshToken)
+		if err != nil {
+			return auth.Credential{}, err
+		}
+		githubToken = user.AccessToken
+		githubTokenExpiry = user.Expiry
+		if user.RefreshToken != "" {
+			githubRefreshToken = user.RefreshToken
+		}
+	}
+
+	tok, err := provider.Refresh(ctx, githubToken)
 	if err != nil {
 		return auth.Credential{}, err
 	}
 	if tok.RefreshToken == "" {
-		tok.RefreshToken = cred.OAuth.RefreshToken
+		tok.RefreshToken = githubToken
 	}
+	tok.GitHubRefreshToken = githubRefreshToken
+	tok.GitHubTokenExpiry = githubTokenExpiry
 	cred.OAuth = tok
 	if err := store.Set(ctx, cred); err != nil {
 		return auth.Credential{}, err
