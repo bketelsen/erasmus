@@ -3,9 +3,11 @@ package jsonl
 
 import (
 	"bufio"
+	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 	"sync"
@@ -365,19 +367,26 @@ func readEntries(path string) ([]entry, error) {
 	}
 	defer file.Close()
 	var entries []entry
-	scanner := bufio.NewScanner(file)
-	for scanner.Scan() {
-		line := scanner.Bytes()
-		if len(line) == 0 {
-			continue
+	// A single entry (e.g. a tool result holding a large file read or a base64
+	// image) can exceed bufio.Scanner's default 64KB token limit, so read with a
+	// bufio.Reader that grows to the line length instead.
+	reader := bufio.NewReader(file)
+	for {
+		line, readErr := reader.ReadBytes('\n')
+		if trimmed := bytes.TrimSpace(line); len(trimmed) > 0 {
+			var e entry
+			if err := json.Unmarshal(trimmed, &e); err != nil {
+				return nil, err
+			}
+			entries = append(entries, e)
 		}
-		var e entry
-		if err := json.Unmarshal(line, &e); err != nil {
-			return nil, err
+		if readErr != nil {
+			if readErr == io.EOF {
+				return entries, nil
+			}
+			return nil, readErr
 		}
-		entries = append(entries, e)
 	}
-	return entries, scanner.Err()
 }
 
 func leafFromEntries(entries []entry) session.EntryID {

@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
@@ -85,6 +86,46 @@ func TestRoundTripReopenBuildContext(t *testing.T) {
 	}
 	if len(built.ActiveTools) != 1 || built.ActiveTools[0] != "read" {
 		t.Fatalf("tools = %v", built.ActiveTools)
+	}
+}
+
+// TestReopenHandlesOversizedLine guards against the bufio.Scanner default 64KB
+// token limit: a single entry holding a large tool result must round-trip on
+// reopen rather than failing with "token too long".
+func TestReopenHandlesOversizedLine(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "session.jsonl")
+	ctx := context.Background()
+
+	s, err := jsonl.Open(path, session.Metadata{ID: "big"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	huge := strings.Repeat("x", 200*1024) // 200KB, well past the 64KB scanner cap
+	if _, err := s.AppendMessage(ctx, message.Message{
+		Role:    message.RoleTool,
+		Content: []message.Content{message.ToolResult{CallID: "c1", Content: []message.Content{message.Text{Text: huge}}}},
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.Close(ctx); err != nil {
+		t.Fatal(err)
+	}
+
+	reopened, err := jsonl.Open(path, session.Metadata{})
+	if err != nil {
+		t.Fatalf("reopen with oversized line: %v", err)
+	}
+	defer reopened.Close(ctx)
+	built, err := reopened.BuildContext(ctx)
+	if err != nil {
+		t.Fatalf("build context: %v", err)
+	}
+	if len(built.Messages) != 1 {
+		t.Fatalf("messages len = %d, want 1", len(built.Messages))
+	}
+	got := built.Messages[0].Content[0].(message.ToolResult).Content[0].(message.Text).Text
+	if len(got) != len(huge) {
+		t.Fatalf("oversized text round-trip = %d bytes, want %d", len(got), len(huge))
 	}
 }
 
