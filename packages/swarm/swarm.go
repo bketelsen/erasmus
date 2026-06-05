@@ -31,6 +31,16 @@ type SpawnRequest struct {
 	Model        string `json:"model,omitempty"`
 	CWD          string `json:"cwd,omitempty"`
 	SessionScope string `json:"session_scope,omitempty"`
+	// SystemPrompt, when set, lets the factory give the spawned agent a
+	// specialized system prompt (e.g. a named role) instead of its default.
+	// Empty means the factory uses its own default. The swarm core does not
+	// read this; it is carried through to Factory.
+	SystemPrompt string `json:"system_prompt,omitempty"`
+	// ActiveTools, when non-empty, lets the factory narrow the spawned agent's
+	// tools to this allow-list (maps onto harness.Config.ActiveTools). Empty
+	// means all tools. The swarm core does not read this; it is carried through
+	// to Factory.
+	ActiveTools []string `json:"active_tools,omitempty"`
 }
 
 // Snapshot is a listable swarm agent summary.
