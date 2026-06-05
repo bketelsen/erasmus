@@ -7,6 +7,7 @@ import (
 	"io"
 	"path/filepath"
 	"regexp"
+	"sort"
 	"strings"
 	"sync/atomic"
 	"time"
@@ -91,6 +92,116 @@ func printExtensionDiagnostics(out io.Writer, diagnostics []string) {
 	for _, line := range diagnostics {
 		fmt.Fprintf(out, "diagnostic\t%s\n", line)
 	}
+}
+
+// ExtensionDoctorConfigured starts configured extensions and prints a health report.
+func ExtensionDoctorConfigured(ctx context.Context, out io.Writer, cfg config.Config) error {
+	if out == nil {
+		out = io.Discard
+	}
+	if len(cfg.Extensions) == 0 {
+		fmt.Fprintln(out, "no configured extensions")
+		return nil
+	}
+	failures := 0
+	for i, ext := range cfg.Extensions {
+		label := extensionConfigLabel(ext)
+		if strings.TrimSpace(ext.Command) == "" {
+			failures++
+			fmt.Fprintf(out, "extension %d\tFAIL\t%s\n", i+1, label)
+			fmt.Fprintln(out, "diagnostic\textension command is required")
+			continue
+		}
+		proc, err := extension.StartProcessWithOptions(ctx, ext.Command, extension.ProcessOptions{LogPath: defaultExtensionLogPath(ext.Command)}, ext.Args...)
+		if err != nil {
+			failures++
+			fmt.Fprintf(out, "extension %d\tFAIL\t%s\n", i+1, label)
+			fmt.Fprintf(out, "diagnostic\t%s\n", err)
+			continue
+		}
+		schemaErrs := validateExtensionToolSchemas(proc)
+		if len(schemaErrs) > 0 {
+			failures++
+			fmt.Fprintf(out, "extension %d\tFAIL\t%s\n", i+1, label)
+		} else {
+			fmt.Fprintf(out, "extension %d\tOK\t%s\n", i+1, label)
+		}
+		printExtensionProtocol(out, proc)
+		printExtensionInventory(out, proc)
+		for _, err := range schemaErrs {
+			fmt.Fprintf(out, "diagnostic\t%s\n", err)
+		}
+		printExtensionDiagnostics(out, proc.Diagnostics())
+		if path := proc.LogPath(); path != "" {
+			fmt.Fprintf(out, "diagnostic\textension log: %s\n", path)
+		}
+		_ = proc.Close()
+	}
+	if failures > 0 {
+		if failures == 1 {
+			return fmt.Errorf("1 extension diagnostic failed")
+		}
+		return fmt.Errorf("%d extension diagnostics failed", failures)
+	}
+	return nil
+}
+
+func extensionConfigLabel(ext config.ExtensionConfig) string {
+	parts := append([]string{strings.TrimSpace(ext.Command)}, ext.Args...)
+	return strings.TrimSpace(strings.Join(parts, " "))
+}
+
+func printExtensionProtocol(out io.Writer, proc *extension.Process) {
+	hello := proc.Hello()
+	name := hello.Name
+	if name == "" {
+		name = "(unknown)"
+	}
+	version := hello.Version
+	if version == "" {
+		version = "(unspecified)"
+	}
+	fmt.Fprintf(out, "protocol\t%s\t%s\n", name, version)
+}
+
+func printExtensionInventory(out io.Writer, proc *extension.Process) {
+	for _, t := range proc.Manager().Registry().List() {
+		fmt.Fprintf(out, "tool\t%s\t%s\n", t.Name(), t.Description())
+	}
+	commands := proc.Manager().Commands()
+	sort.Slice(commands, func(i, j int) bool { return commands[i].Name() < commands[j].Name() })
+	for _, c := range commands {
+		fmt.Fprintf(out, "command\t%s\t%s\n", c.Name(), c.Description())
+	}
+	events := proc.EventSubscriptions()
+	sort.Strings(events)
+	for _, eventName := range events {
+		fmt.Fprintf(out, "event\t%s\n", eventName)
+	}
+	hooks := proc.HookSubscriptions()
+	sort.Strings(hooks)
+	for _, hook := range hooks {
+		fmt.Fprintf(out, "hook\t%s\n", hook)
+	}
+}
+
+func validateExtensionToolSchemas(proc *extension.Process) []error {
+	var errs []error
+	for _, t := range proc.Manager().Registry().List() {
+		schema := t.Schema()
+		if len(schema) == 0 {
+			continue
+		}
+		var decoded any
+		if err := json.Unmarshal(schema, &decoded); err != nil {
+			errs = append(errs, fmt.Errorf("invalid tool schema for %s: %w", t.Name(), err))
+			continue
+		}
+		if _, ok := decoded.(map[string]any); !ok {
+			errs = append(errs, fmt.Errorf("invalid tool schema for %s: schema must be a JSON object", t.Name()))
+		}
+	}
+	return errs
 }
 
 func withExtensionLogPath(err error, path string) error {

@@ -5,7 +5,9 @@ import (
 	"context"
 	"net/http"
 	"net/http/httptest"
+	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 	"time"
@@ -260,6 +262,45 @@ func TestModelsRefreshGitHubCopilotPopulatesDefaultCache(t *testing.T) {
 	got := out.String()
 	if !strings.Contains(got, "github-copilot/claude-sonnet-4.5\tClaude Sonnet 4.5") || !strings.Contains(got, "github-copilot/gpt-5.3-codex\tGPT-5.3-Codex") {
 		t.Fatalf("models output = %q", got)
+	}
+}
+
+func TestExtensionDoctorCommandUsesConfiguredExtensions(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("script test")
+	}
+	root := t.TempDir()
+	t.Setenv("ERASMUS_CONFIG_FILE", "")
+	t.Setenv("ERASMUS_AUTH_FILE", "")
+	t.Setenv("XDG_STATE_HOME", filepath.Join(root, "state"))
+	extPath := filepath.Join(root, "doctor-ext.py")
+	script := `#!/usr/bin/env python3
+import json, sys
+print(json.dumps({"type":"hello","data":{"name":"doctor-cli","version":"1"}}), flush=True)
+print(json.dumps({"type":"register_tool","data":{"name":"echo_ext","description":"echo extension","schema":{"type":"object"}}}), flush=True)
+for line in sys.stdin:
+    pass
+`
+	if err := os.WriteFile(extPath, []byte(script), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	cfgPath := filepath.Join(root, "config.json")
+	if err := config.Save(context.Background(), cfgPath, config.Config{Extensions: []config.ExtensionConfig{{Command: extPath}}}); err != nil {
+		t.Fatal(err)
+	}
+	cmd := newRootCommand()
+	var out bytes.Buffer
+	cmd.SetOut(&out)
+	cmd.SetErr(&out)
+	cmd.SetArgs([]string{"--config", cfgPath, "extension", "doctor"})
+	if err := cmd.Execute(); err != nil {
+		t.Fatal(err)
+	}
+	got := out.String()
+	for _, want := range []string{"extension 1\tOK\t" + extPath, "protocol\tdoctor-cli\t1", "tool\techo_ext\techo extension"} {
+		if !strings.Contains(got, want) {
+			t.Fatalf("doctor output missing %q:\n%s", want, got)
+		}
 	}
 }
 

@@ -11,28 +11,66 @@ import (
 )
 
 func newExtensionCommand() *cobra.Command {
-	return &cobra.Command{
-		Use:                "extension [list|exec]",
-		Short:              "Inspect and run extensions",
-		DisableFlagParsing: true,
+	cmd := &cobra.Command{
+		Use:   "extension",
+		Short: "Inspect and run extensions",
 		RunE: func(cmd *cobra.Command, args []string) error {
-			return handleExtension(cmd, args)
+			return extensionUsageError()
+		},
+	}
+	cmd.AddCommand(newExtensionDoctorCommand(), newExtensionListCommand(), newExtensionExecCommand())
+	return cmd
+}
+
+func newExtensionDoctorCommand() *cobra.Command {
+	return &cobra.Command{
+		Use:   "doctor",
+		Short: "Diagnose configured extensions",
+		Args:  cobra.NoArgs,
+		RunE: func(cmd *cobra.Command, args []string) error {
+			cfg, err := loadConfig(context.Background())
+			if err != nil {
+				return err
+			}
+			return app.ExtensionDoctorConfigured(context.Background(), cmd.OutOrStdout(), cfg)
 		},
 	}
 }
 
-func handleExtension(cmd *cobra.Command, args []string) error {
-	if len(args) >= 2 && args[0] == "list" {
-		return app.ExtensionListProcess(context.Background(), cmd.OutOrStdout(), args[1], args[2:]...)
+func newExtensionListCommand() *cobra.Command {
+	return &cobra.Command{
+		Use:                "list <command> [args...]",
+		Short:              "Inspect one extension process",
+		DisableFlagParsing: true,
+		RunE: func(cmd *cobra.Command, args []string) error {
+			if len(args) < 1 {
+				return extensionUsageError()
+			}
+			return app.ExtensionListProcess(context.Background(), cmd.OutOrStdout(), args[0], args[1:]...)
+		},
 	}
-	if len(args) >= 3 && args[0] == "exec" {
-		processArgs, commandName, input, err := parseExtensionExecArgs(args[2:])
-		if err != nil {
-			return err
-		}
-		return app.ExtensionExecProcess(context.Background(), cmd.OutOrStdout(), args[1], processArgs, commandName, input)
+}
+
+func newExtensionExecCommand() *cobra.Command {
+	return &cobra.Command{
+		Use:                "exec <process> [process-args...] -- <command> [input]",
+		Short:              "Run one registered extension command",
+		DisableFlagParsing: true,
+		RunE: func(cmd *cobra.Command, args []string) error {
+			if len(args) < 2 {
+				return extensionUsageError()
+			}
+			processArgs, commandName, input, err := parseExtensionExecArgs(args[1:])
+			if err != nil {
+				return err
+			}
+			return app.ExtensionExecProcess(context.Background(), cmd.OutOrStdout(), args[0], processArgs, commandName, input)
+		},
 	}
-	return fmt.Errorf("usage: erasmus extension list <command> [args...]\n   or: erasmus extension exec <process> [process-args...] -- <command> [input]")
+}
+
+func extensionUsageError() error {
+	return fmt.Errorf("usage: erasmus extension doctor\n   or: erasmus extension list <command> [args...]\n   or: erasmus extension exec <process> [process-args...] -- <command> [input]")
 }
 
 func parseExtensionExecArgs(args []string) (processArgs []string, commandName string, input string, err error) {

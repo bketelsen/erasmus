@@ -24,6 +24,7 @@ type Process struct {
 	manager *Manager
 
 	mu       sync.Mutex
+	hello    proto.Hello
 	pendingT map[string]chan proto.ToolResult
 	pendingC map[string]chan proto.CommandResult
 	pendingH map[string]chan proto.HookResult
@@ -101,6 +102,44 @@ func (p *Process) LogPath() string {
 		return ""
 	}
 	return p.logs.Path()
+}
+
+// Hello returns the extension startup hello frame, when one was provided.
+func (p *Process) Hello() proto.Hello {
+	if p == nil {
+		return proto.Hello{}
+	}
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	return p.hello
+}
+
+// EventSubscriptions returns the event types this extension subscribed to.
+func (p *Process) EventSubscriptions() []string {
+	if p == nil {
+		return nil
+	}
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	out := make([]string, 0, len(p.subs))
+	for typ := range p.subs {
+		out = append(out, typ)
+	}
+	return out
+}
+
+// HookSubscriptions returns the blocking runtime hooks this extension subscribed to.
+func (p *Process) HookSubscriptions() []string {
+	if p == nil {
+		return nil
+	}
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	out := make([]string, 0, len(p.hooks))
+	for hook := range p.hooks {
+		out = append(out, hook)
+	}
+	return out
 }
 
 // Close terminates the subprocess.
@@ -330,6 +369,13 @@ func (p *Process) dispatch() {
 func (p *Process) handle(frame proto.Frame) error {
 	switch frame.Type {
 	case "hello":
+		var hello proto.Hello
+		if err := proto.DecodeData(frame, &hello); err != nil {
+			return err
+		}
+		p.mu.Lock()
+		p.hello = hello
+		p.mu.Unlock()
 		return nil
 	case "register_tool":
 		var reg proto.RegisterTool
