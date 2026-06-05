@@ -62,7 +62,10 @@ func TestMultiServerRuntimeLifecycle(t *testing.T) {
 		t.Fatal(err)
 	}
 	got := out.String()
-	for _, want := range []string{`"id":"1"`, `"alpha"`, `"id":"2"`, `"id":"3"`, `"id":"4"`, `"reasoning":"medium"`, `"id":"5"`, `"Fake Echo"`, `"id":"6"`, `"status":"started"`, `"method":"runtime_event"`, `"runtime_id":"alpha"`, `"type":"message_delta"`, "runtime says hi", `"id":"7"`, `"status":"settled"`, `"id":"8"`, `"leaf_id"`, `"id":"9"`, `"entries"`, `"id":"10"`, `"session_id"`, `"id":"11"`, `"review"`, `"id":"12"`, `"status":"saved"`, `"id":"13"`, "No earlier conversation", "keep facts", `"id":"14"`, `"messages"`, `"id":"15"`, `"status":"closed"`, `"id":"16"`, `"result":[]`} {
+	// Compaction (id 13) is now model-driven: the summary is the streamed model
+	// text ("runtime says hi") with custom instructions appended, rather than the
+	// former placeholder local summary.
+	for _, want := range []string{`"id":"1"`, `"alpha"`, `"id":"2"`, `"id":"3"`, `"id":"4"`, `"reasoning":"medium"`, `"id":"5"`, `"Fake Echo"`, `"id":"6"`, `"status":"started"`, `"method":"runtime_event"`, `"runtime_id":"alpha"`, `"type":"message_delta"`, "runtime says hi", `"id":"7"`, `"status":"settled"`, `"id":"8"`, `"leaf_id"`, `"id":"9"`, `"entries"`, `"id":"10"`, `"session_id"`, `"id":"11"`, `"review"`, `"id":"12"`, `"status":"saved"`, `"id":"13"`, `"Summary":"runtime says hi`, "keep facts", `"id":"14"`, `"messages"`, `"id":"15"`, `"status":"closed"`, `"id":"16"`, `"result":[]`} {
 		if !strings.Contains(got, want) {
 			t.Fatalf("output missing %s:\n%s", want, got)
 		}
