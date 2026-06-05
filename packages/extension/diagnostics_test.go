@@ -33,7 +33,7 @@ sleep 3
 		t.Fatal("expected startup error")
 	}
 	got := err.Error()
-	for _, want := range []string{"no startup frames", "invalid JSON frame", "startup failed loudly", "recent extension diagnostics"} {
+	for _, want := range []string{"invalid JSON frame", "startup failed loudly", "recent extension diagnostics"} {
 		if !strings.Contains(got, want) {
 			t.Fatalf("error missing %q:\n%s", want, got)
 		}

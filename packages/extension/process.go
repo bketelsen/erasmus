@@ -23,15 +23,17 @@ type Process struct {
 	frames  chan proto.Frame
 	manager *Manager
 
-	mu       sync.Mutex
-	pendingT map[string]chan proto.ToolResult
-	pendingC map[string]chan proto.CommandResult
-	pendingH map[string]chan proto.HookResult
-	subs     map[string]bool
-	hooks    map[string]bool
-	logs     *ringLog
-	writeMu  sync.Mutex
-	done     chan error
+	mu        sync.Mutex
+	hello     proto.Hello
+	protoErrs []string
+	pendingT  map[string]chan proto.ToolResult
+	pendingC  map[string]chan proto.CommandResult
+	pendingH  map[string]chan proto.HookResult
+	subs      map[string]bool
+	hooks     map[string]bool
+	logs      *ringLog
+	writeMu   sync.Mutex
+	done      chan error
 }
 
 // ProcessOptions configures an extension subprocess host.
@@ -95,12 +97,68 @@ func (p *Process) Diagnostics() []string {
 	return p.logs.Lines()
 }
 
+func (p *Process) addProtocolError(line string) {
+	p.mu.Lock()
+	p.protoErrs = append(p.protoErrs, line)
+	p.mu.Unlock()
+	if p.logs != nil {
+		p.logs.AddSource("stdout", line)
+	}
+}
+
+func (p *Process) protocolError() error {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	if len(p.protoErrs) == 0 {
+		return nil
+	}
+	return fmt.Errorf("%s", p.protoErrs[0])
+}
+
 // LogPath returns the persistent diagnostics log path, when configured.
 func (p *Process) LogPath() string {
 	if p == nil || p.logs == nil {
 		return ""
 	}
 	return p.logs.Path()
+}
+
+// Hello returns the extension startup hello frame, when one was provided.
+func (p *Process) Hello() proto.Hello {
+	if p == nil {
+		return proto.Hello{}
+	}
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	return p.hello
+}
+
+// EventSubscriptions returns the event types this extension subscribed to.
+func (p *Process) EventSubscriptions() []string {
+	if p == nil {
+		return nil
+	}
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	out := make([]string, 0, len(p.subs))
+	for typ := range p.subs {
+		out = append(out, typ)
+	}
+	return out
+}
+
+// HookSubscriptions returns the blocking runtime hooks this extension subscribed to.
+func (p *Process) HookSubscriptions() []string {
+	if p == nil {
+		return nil
+	}
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	out := make([]string, 0, len(p.hooks))
+	for hook := range p.hooks {
+		out = append(out, hook)
+	}
+	return out
 }
 
 // Close terminates the subprocess.
@@ -246,8 +304,8 @@ func (p *Process) read(r io.Reader) {
 		var frame proto.Frame
 		if err := json.Unmarshal(line, &frame); err == nil {
 			p.frames <- frame
-		} else if p.logs != nil {
-			p.logs.AddSource("stdout", "stdout: invalid JSON frame: "+err.Error()+": "+string(line))
+		} else {
+			p.addProtocolError("stdout: invalid JSON frame: " + err.Error() + ": " + string(line))
 		}
 	}
 	if err := scanner.Err(); err != nil && p.logs != nil {
@@ -281,6 +339,9 @@ func (p *Process) collectStartup(ctx context.Context, quiet time.Duration) error
 		select {
 		case frame, ok := <-p.frames:
 			if !ok {
+				if err := p.protocolError(); err != nil {
+					return err
+				}
 				select {
 				case err := <-p.done:
 					if err != nil {
@@ -303,9 +364,15 @@ func (p *Process) collectStartup(ctx context.Context, quiet time.Duration) error
 			quietTimer.Reset(quiet)
 		case <-quietTimer.C:
 			go p.dispatch()
+			if err := p.protocolError(); err != nil {
+				return err
+			}
 			return nil
 		case <-deadline.C:
 			go p.dispatch()
+			if err := p.protocolError(); err != nil {
+				return err
+			}
 			if seenFrame {
 				return nil
 			}
@@ -330,6 +397,13 @@ func (p *Process) dispatch() {
 func (p *Process) handle(frame proto.Frame) error {
 	switch frame.Type {
 	case "hello":
+		var hello proto.Hello
+		if err := proto.DecodeData(frame, &hello); err != nil {
+			return err
+		}
+		p.mu.Lock()
+		p.hello = hello
+		p.mu.Unlock()
 		return nil
 	case "register_tool":
 		var reg proto.RegisterTool
@@ -437,6 +511,8 @@ func (p *Process) handle(frame proto.Frame) error {
 			return err
 		}
 		p.manager.AddHostAction(action)
+	default:
+		return fmt.Errorf("unsupported extension frame type %q", frame.Type)
 	}
 	return nil
 }

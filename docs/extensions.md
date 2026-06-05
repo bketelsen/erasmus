@@ -127,6 +127,14 @@ See `examples/extension-go` for a complete Go module with one tool, one command,
 
 ## CLI
 
+Diagnose configured extension subprocesses:
+
+```sh
+erasmus extension doctor
+```
+
+The doctor command uses the same configured extensions that normal Erasmus runs load. It starts each extension, reports protocol name/version, registered tools, commands, event subscriptions, hook subscriptions, diagnostics, and persistent log paths. Startup failures, bad protocol frames, and invalid registered tool schemas are reported as `FAIL` entries and make the command exit non-zero.
+
 Inspect an extension process:
 
 ```sh
