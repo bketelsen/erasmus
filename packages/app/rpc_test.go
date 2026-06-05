@@ -14,7 +14,10 @@ func TestRunRPCFake(t *testing.T) {
 		t.Fatal(err)
 	}
 	got := out.String()
-	if !strings.Contains(got, `"Fake Echo"`) || !strings.Contains(got, `"status":"saved"`) || !strings.Contains(got, `"fake"`) || !strings.Contains(got, `"reasoning":"low"`) || !strings.Contains(got, `"runtime_id":"main"`) || !strings.Contains(got, `"type":"message_delta"`) || !strings.Contains(got, "fake response: hello") || !strings.Contains(got, `"leaf_id"`) || !strings.Contains(got, `"session_id"`) || !strings.Contains(got, "No earlier conversation") || !strings.Contains(got, `"status":"removed"`) {
+	// Compaction (id 14) is model-driven: its summary is the streamed model
+	// text ("fake response: ...") rather than the former placeholder local
+	// summary.
+	if !strings.Contains(got, `"Fake Echo"`) || !strings.Contains(got, `"status":"saved"`) || !strings.Contains(got, `"fake"`) || !strings.Contains(got, `"reasoning":"low"`) || !strings.Contains(got, `"runtime_id":"main"`) || !strings.Contains(got, `"type":"message_delta"`) || !strings.Contains(got, "fake response: hello") || !strings.Contains(got, `"leaf_id"`) || !strings.Contains(got, `"session_id"`) || !strings.Contains(got, `"Summary":"fake response: `) || !strings.Contains(got, `"status":"removed"`) {
 		t.Fatalf("unexpected rpc output:\n%s", got)
 	}
 }
