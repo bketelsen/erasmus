@@ -449,3 +449,92 @@ func TestRunCanceledContext(t *testing.T) {
 		t.Fatal("expected error from canceled context")
 	}
 }
+
+func TestRunMethodModelOnSuccess(t *testing.T) {
+	prep, err := compact.Prepare(multiTurnTranscript(), compact.Options{KeepTurns: 3, Model: model.Model{ID: "test-model", Provider: "fake"}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	client := &fake.Client{
+		Script: []provider.Event{
+			provider.TextDelta{Text: "model-generated summary"},
+			provider.MessageEnd{StopReason: "stop"},
+		},
+	}
+	res, err := compact.Run(context.Background(), client.StreamFunc(), prep)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if res.Method != compact.SummaryModel {
+		t.Fatalf("Method = %q, want %q", res.Method, compact.SummaryModel)
+	}
+}
+
+func TestRunMethodFallbackOnNilStream(t *testing.T) {
+	prep, err := compact.Prepare(multiTurnTranscript(), compact.Options{KeepTurns: 3})
+	if err != nil {
+		t.Fatal(err)
+	}
+	res, err := compact.Run(context.Background(), nil, prep)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if res.Method != compact.SummaryFallback {
+		t.Fatalf("Method = %q, want %q", res.Method, compact.SummaryFallback)
+	}
+}
+
+func TestRunMethodFallbackOnStreamConstructError(t *testing.T) {
+	prep, err := compact.Prepare(multiTurnTranscript(), compact.Options{KeepTurns: 3})
+	if err != nil {
+		t.Fatal(err)
+	}
+	// errStreamClient.Stream returns (nil, err): a stream-construct failure.
+	res, err := compact.Run(context.Background(), (&errStreamClient{}).Stream, prep)
+	if err != nil {
+		t.Fatalf("Run should fall back, not error: %v", err)
+	}
+	if res.Method != compact.SummaryFallback {
+		t.Fatalf("Method = %q, want %q", res.Method, compact.SummaryFallback)
+	}
+}
+
+func TestRunMethodFallbackOnProviderError(t *testing.T) {
+	prep, err := compact.Prepare(multiTurnTranscript(), compact.Options{KeepTurns: 3})
+	if err != nil {
+		t.Fatal(err)
+	}
+	client := &fake.Client{
+		Script: []provider.Event{
+			provider.TextDelta{Text: "partial that should be discarded"},
+			provider.Error{Err: "boom"},
+		},
+	}
+	res, err := compact.Run(context.Background(), client.StreamFunc(), prep)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if res.Method != compact.SummaryFallback {
+		t.Fatalf("Method = %q, want %q", res.Method, compact.SummaryFallback)
+	}
+}
+
+func TestRunMethodFallbackOnEmptyModelOutput(t *testing.T) {
+	prep, err := compact.Prepare(multiTurnTranscript(), compact.Options{KeepTurns: 3})
+	if err != nil {
+		t.Fatal(err)
+	}
+	// Only a MessageEnd, no TextDelta: the model produced no usable output.
+	client := &fake.Client{
+		Script: []provider.Event{
+			provider.MessageEnd{StopReason: "stop"},
+		},
+	}
+	res, err := compact.Run(context.Background(), client.StreamFunc(), prep)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if res.Method != compact.SummaryFallback {
+		t.Fatalf("Method = %q, want %q", res.Method, compact.SummaryFallback)
+	}
+}
