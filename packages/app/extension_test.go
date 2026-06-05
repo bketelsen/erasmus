@@ -185,3 +185,29 @@ for line in sys.stdin:
 		t.Fatalf("doctor output missing invalid schema diagnostic:\n%s", got)
 	}
 }
+
+func TestExtensionDoctorConfiguredReportsBadProtocolFrame(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("script test")
+	}
+	path := filepath.Join(t.TempDir(), "bad-protocol.py")
+	script := `#!/usr/bin/env python3
+import json, sys
+print(json.dumps({"type":"hello","data":{"name":"bad-protocol","version":"1"}}), flush=True)
+print("not json", flush=True)
+for line in sys.stdin:
+    pass
+`
+	if err := os.WriteFile(path, []byte(script), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	var out bytes.Buffer
+	err := app.ExtensionDoctorConfigured(context.Background(), &out, config.Config{Extensions: []config.ExtensionConfig{{Command: path}}})
+	if err == nil {
+		t.Fatal("expected doctor error")
+	}
+	got := out.String()
+	if !strings.Contains(got, "extension 1\tFAIL\t"+path) || !strings.Contains(got, "invalid JSON frame") {
+		t.Fatalf("doctor output missing bad protocol diagnostic:\n%s", got)
+	}
+}
