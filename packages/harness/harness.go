@@ -487,6 +487,12 @@ func (h *Harness) Compact(ctx context.Context, opts compact.Options) (compact.Re
 			opts = *next.Options
 		}
 	}
+	// Default the summary model to the resolved runtime model when the caller
+	// did not set one, so compact.Run can take the model-summary path instead of
+	// always falling back. A caller-supplied model is preserved.
+	if opts.Model.ID == "" {
+		opts.Model = h.agent.State().Model
+	}
 	prep, err := compact.Prepare(messages, opts)
 	if err != nil {
 		return compact.Result{}, err
@@ -512,7 +518,7 @@ func (h *Harness) Compact(ctx context.Context, opts compact.Options) (compact.Re
 	h.mu.Lock()
 	h.seen = len(result.Messages)
 	h.mu.Unlock()
-	h.publish(event.SessionCompact{Summary: result.Summary, TokensBefore: result.TokensBefore})
+	h.publish(event.SessionCompact{Summary: result.Summary, TokensBefore: result.TokensBefore, Method: string(result.Method)})
 	return result, nil
 }
 

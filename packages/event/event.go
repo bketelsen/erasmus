@@ -181,6 +181,14 @@ func (SessionTree) Type() string { return "session_tree" }
 type SessionCompact struct {
 	Summary      string `json:"summary"`
 	TokensBefore int    `json:"tokens_before,omitempty"`
+	// Method records which rung produced the summary: "model" for a
+	// model-generated summary or "fallback" for the deterministic local
+	// fallback. It is a plain string (the compact.SummaryMethod value) so this
+	// package need not import compact. An empty Method means unknown (e.g. old
+	// data). This marker distinguishes model-vs-fallback only for a successful
+	// compaction; a compaction that fails entirely publishes no SessionCompact
+	// and is signaled by Harness.Compact returning an error instead.
+	Method string `json:"method,omitempty"`
 }
 
 func (SessionCompact) Type() string { return "session_compact" }
