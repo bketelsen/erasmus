@@ -107,63 +107,46 @@ func resolveStream(ctx context.Context, m model.Model, store auth.Store) (provid
 		}
 		return client.Stream, nil
 	case "openai-codex":
-		cred, err := credentialForProvider(ctx, store, m.Provider)
-		if err != nil {
+		// Validate (and refresh, if already expired) the credential at resolve
+		// time so resolution fails fast, then return a stream that re-checks
+		// expiry before every request. OAuth access tokens expire mid-session,
+		// and the stream func outlives a single request, so a token frozen here
+		// would otherwise lapse with no way to renew it.
+		if _, err := openAICodexCredential(ctx, store); err != nil {
 			return nil, err
 		}
-		if cred.OAuth == nil {
-			return nil, fmt.Errorf("openai-codex requires OAuth credentials")
-		}
-		if cred.OAuth.Expired() {
-			cred, err = refreshOpenAICodexCredential(ctx, store, cred)
+		return func(ctx context.Context, req provider.Request) (<-chan provider.Event, error) {
+			cred, err := openAICodexCredential(ctx, store)
 			if err != nil {
 				return nil, err
 			}
-		}
-		client, err := openaicodex.New(openaicodex.Config{AccessToken: cred.OAuth.AccessToken, AccountID: cred.OAuth.AccountID})
-		if err != nil {
-			return nil, err
-		}
-		return client.Stream, nil
+			client, err := openaicodex.New(openaicodex.Config{AccessToken: cred.OAuth.AccessToken, AccountID: cred.OAuth.AccountID})
+			if err != nil {
+				return nil, err
+			}
+			return client.Stream(ctx, req)
+		}, nil
 	case "github-copilot":
-		cred, err := credentialForProvider(ctx, store, m.Provider)
+		newClient, err := githubCopilotClientFactory(m.ID)
 		if err != nil {
 			return nil, err
 		}
-		if cred.OAuth == nil {
-			return nil, fmt.Errorf("github-copilot requires OAuth credentials")
+		// As with openai-codex, validate up front and refresh per request: the
+		// short-lived Copilot token (~30m) expires well within a long session.
+		if _, err := githubCopilotCredential(ctx, store); err != nil {
+			return nil, err
 		}
-		if cred.OAuth.Expired() {
-			cred, err = refreshGitHubCopilotCredential(ctx, store, cred)
+		return func(ctx context.Context, req provider.Request) (<-chan provider.Event, error) {
+			cred, err := githubCopilotCredential(ctx, store)
 			if err != nil {
 				return nil, err
 			}
-		}
-		switch {
-		case githubCopilotUsesChatCompletions(m.ID):
-			baseURL := auth.GitHubCopilotBaseURLFromToken(cred.OAuth.AccessToken)
-			client, err := githubcopilot.NewChatCompletions(githubcopilot.Config{AccessToken: cred.OAuth.AccessToken, BaseURL: baseURL})
+			client, err := newClient(cred.OAuth.AccessToken)
 			if err != nil {
 				return nil, err
 			}
-			return client.Stream, nil
-		case githubCopilotUsesResponses(m.ID):
-			baseURL := auth.GitHubCopilotBaseURLFromToken(cred.OAuth.AccessToken)
-			client, err := githubcopilot.NewResponses(githubcopilot.Config{AccessToken: cred.OAuth.AccessToken, BaseURL: baseURL})
-			if err != nil {
-				return nil, err
-			}
-			return client.Stream, nil
-		case githubCopilotUsesAnthropicMessages(m.ID):
-			baseURL := auth.GitHubCopilotBaseURLFromToken(cred.OAuth.AccessToken)
-			client, err := githubcopilot.NewAnthropicMessages(githubcopilot.Config{AccessToken: cred.OAuth.AccessToken, BaseURL: baseURL})
-			if err != nil {
-				return nil, err
-			}
-			return client.Stream, nil
-		default:
-			return nil, fmt.Errorf("github-copilot model %q is not wired yet", m.ID)
-		}
+			return client.Stream(ctx, req)
+		}, nil
 	default:
 		return nil, fmt.Errorf("provider %q is not wired", m.Provider)
 	}
@@ -180,6 +163,67 @@ func githubCopilotUsesResponses(modelID string) bool {
 
 func githubCopilotUsesAnthropicMessages(modelID string) bool {
 	return strings.HasPrefix(strings.ToLower(modelID), "claude-")
+}
+
+// openAICodexCredential fetches the openai-codex credential, refreshing the
+// OAuth access token through the store when it has expired.
+func openAICodexCredential(ctx context.Context, store auth.Store) (auth.Credential, error) {
+	cred, err := credentialForProvider(ctx, store, "openai-codex")
+	if err != nil {
+		return auth.Credential{}, err
+	}
+	if cred.OAuth == nil {
+		return auth.Credential{}, fmt.Errorf("openai-codex requires OAuth credentials")
+	}
+	if cred.OAuth.Expired() {
+		cred, err = refreshOpenAICodexCredential(ctx, store, cred)
+		if err != nil {
+			return auth.Credential{}, err
+		}
+	}
+	return cred, nil
+}
+
+// githubCopilotCredential fetches the github-copilot credential, refreshing the
+// short-lived Copilot token (and, if needed, the GitHub user token) through the
+// store when it has expired.
+func githubCopilotCredential(ctx context.Context, store auth.Store) (auth.Credential, error) {
+	cred, err := credentialForProvider(ctx, store, "github-copilot")
+	if err != nil {
+		return auth.Credential{}, err
+	}
+	if cred.OAuth == nil {
+		return auth.Credential{}, fmt.Errorf("github-copilot requires OAuth credentials")
+	}
+	if cred.OAuth.Expired() {
+		cred, err = refreshGitHubCopilotCredential(ctx, store, cred)
+		if err != nil {
+			return auth.Credential{}, err
+		}
+	}
+	return cred, nil
+}
+
+// githubCopilotClientFactory selects the Copilot client constructor for a model
+// and returns a builder that produces a fresh client from a current access
+// token, so each request can re-derive the proxy base URL from the live token.
+func githubCopilotClientFactory(modelID string) (func(accessToken string) (provider.Client, error), error) {
+	switch {
+	case githubCopilotUsesChatCompletions(modelID):
+		return func(token string) (provider.Client, error) {
+			return githubcopilot.NewChatCompletions(githubcopilot.Config{AccessToken: token, BaseURL: auth.GitHubCopilotBaseURLFromToken(token)})
+		}, nil
+	case githubCopilotUsesResponses(modelID):
+		return func(token string) (provider.Client, error) {
+			return githubcopilot.NewResponses(githubcopilot.Config{AccessToken: token, BaseURL: auth.GitHubCopilotBaseURLFromToken(token)})
+		}, nil
+	case githubCopilotUsesAnthropicMessages(modelID):
+		return func(token string) (provider.Client, error) {
+			return githubcopilot.NewAnthropicMessages(githubcopilot.Config{AccessToken: token, BaseURL: auth.GitHubCopilotBaseURLFromToken(token)})
+		}, nil
+	default:
+		return nil, fmt.Errorf("github-copilot model %q is not wired yet", modelID)
+	}
 }
 
 func refreshOpenAICodexCredential(ctx context.Context, store auth.Store, cred auth.Credential) (auth.Credential, error) {
