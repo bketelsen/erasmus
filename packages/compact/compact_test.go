@@ -278,6 +278,30 @@ func TestRunModelDrivenSuccess(t *testing.T) {
 	}
 }
 
+func TestRunModelDrivenForwardsMaxTokens(t *testing.T) {
+	messages := multiTurnTranscript()
+	mdl := model.Model{ID: "test-model", Provider: "fake"}
+	prep, err := compact.Prepare(messages, compact.Options{KeepTurns: 3, Model: mdl, MaxTokens: 512})
+	if err != nil {
+		t.Fatal(err)
+	}
+	client := &fake.Client{
+		Script: []provider.Event{
+			provider.TextDelta{Text: "ok"},
+			provider.MessageEnd{},
+		},
+	}
+	if _, err := compact.Run(context.Background(), client.StreamFunc(), prep); err != nil {
+		t.Fatal(err)
+	}
+	if len(client.Requests) != 1 {
+		t.Fatalf("expected 1 request, got %d", len(client.Requests))
+	}
+	if client.Requests[0].MaxTokens != 512 {
+		t.Fatalf("request MaxTokens = %d, want 512 (Options.MaxTokens must be forwarded)", client.Requests[0].MaxTokens)
+	}
+}
+
 func TestRunModelDrivenCustomInstructionAppended(t *testing.T) {
 	messages := multiTurnTranscript()
 	prep, err := compact.Prepare(messages, compact.Options{KeepTurns: 3, CustomInstructions: "stay terse"})

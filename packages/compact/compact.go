@@ -203,9 +203,10 @@ func modelSummary(ctx context.Context, stream provider.StreamFunc, prep Preparat
 	}
 
 	req := provider.Request{
-		Model:    prep.Options.Model,
-		System:   instruction,
-		Messages: prep.Summarize,
+		Model:     prep.Options.Model,
+		System:    instruction,
+		Messages:  prep.Summarize,
+		MaxTokens: prep.Options.MaxTokens,
 	}
 
 	events, err := stream(ctx, req)
@@ -217,9 +218,14 @@ func modelSummary(ctx context.Context, stream provider.StreamFunc, prep Preparat
 	for {
 		select {
 		case <-ctx.Done():
+			// The provider terminates its stream on context cancellation, so we
+			// intentionally do not drain events here (real providers use
+			// context-bound HTTP; the fake selects on ctx.Done()).
 			return ""
 		case ev, ok := <-events:
 			if !ok {
+				// A clean channel close with accumulated text is success: do not
+				// "fix" a partial-then-clean-close into a fallback.
 				return builder.String()
 			}
 			switch e := ev.(type) {
