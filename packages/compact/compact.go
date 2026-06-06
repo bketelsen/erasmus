@@ -198,11 +198,14 @@ func Run(ctx context.Context, stream provider.StreamFunc, prep Preparation) (Res
 		return Result{}, err
 	}
 
-	method := SummaryFallback
 	summary := ""
 	if stream != nil {
 		summary = modelSummary(ctx, stream, prep)
 	}
+	// Both rungs set method explicitly: a non-empty model summary is "model",
+	// otherwise the deterministic local fallback is "fallback". (No dead initial
+	// assignment — every path through method is a real write that is read below.)
+	var method SummaryMethod
 	if strings.TrimSpace(summary) != "" {
 		method = SummaryModel
 	} else {
