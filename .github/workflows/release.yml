@@ -30,8 +30,34 @@ jobs:
           go-version-file: go.mod
           cache: true
 
+      # Gate the publish on the same checks CI runs on main/PRs. A v* tag can be
+      # pushed by any path (e.g. a manual git tag, not just `make bump`), so the
+      # release job must re-verify formatting, vet, lint and smoke itself rather
+      # than trust that CI already passed for this commit. (golangci-lint is
+      # pinned to the same version as ci.yml so the two cannot disagree.)
+      # Follow-up to DRY this against ci.yml: see the tracked issue for option B.
+      - name: gofmt check
+        run: |
+          files="$(gofmt -l .)"
+          if [ -n "$files" ]; then
+            echo "$files"
+            exit 1
+          fi
+
+      - name: Vet
+        run: make vet
+
+      - name: golangci-lint
+        uses: golangci/golangci-lint-action@v7
+        with:
+          version: v2.12.2
+          args: ./...
+
       - name: Run tests
         run: make test
+
+      - name: Smoke tests
+        run: make smoke
 
       - name: GoReleaser snapshot
         if: github.event_name == 'workflow_dispatch' && inputs.snapshot
